@@ -1,0 +1,11 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+*.xcodeproj
+*.xcworkspace
+.swiftpm/xcode
+.swiftpm/configuration
+.idea/
+*.swp
+*~
