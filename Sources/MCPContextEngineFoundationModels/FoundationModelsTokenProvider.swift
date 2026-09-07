@@ -32,3 +32,16 @@ public final class FoundationModelsTokenProvider: TokenProvider, @unchecked Send
         #endif
     }
 }
+
+extension FoundationModelsTokenProvider: TokenCapacityProvider {
+    public var defaultCapacity: Int {
+        return Self.runtimeContextCapacity()
+    }
+
+    public func capacity(for modelIdentifier: String) -> Int {
+        if modelIdentifier.lowercased().contains("pcc") {
+            return 32768
+        }
+        return defaultCapacity
+    }
+}
