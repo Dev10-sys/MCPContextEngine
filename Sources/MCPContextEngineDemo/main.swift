@@ -62,9 +62,23 @@ print("Available Headroom for Result:   \(budget.availableForResultTokens) token
 // STEP 5: MCP Tool Execution
 print("\n[STEP 5: MCP EXECUTION]")
 print("Executing selected tool: '\(routingResult.selectedTools[0].name)'...")
-let rawMCPResult = DemoScenario.makeSyntheticLargeGitHubResult()
+var rawMCPResult = ""
+var isLiveExecution = false
+
+do {
+    rawMCPResult = try await DemoScenario.fetchLiveGitHubIssues()
+    isLiveExecution = true
+    print("✓ Successfully executed live against GitHub API (repos/swiftlang/swift/issues?labels=concurrency)")
+} catch {
+    print("Notice: Using realistic synthetic benchmark fixture (offline mode)")
+    rawMCPResult = DemoScenario.makeSyntheticLargeGitHubResult()
+}
+
 let rawTokens = tokenProvider.countTokens(text: rawMCPResult)
 print("Received raw MCP payload: \(rawMCPResult.count) characters (~\(rawTokens) tokens)")
+if rawMCPResult.contains("92004") {
+    print("  ✓ Detected live Swift Concurrency Issue #92004 in raw payload")
+}
 
 let initialFit = budgetManager.evaluateResultFit(resultText: rawMCPResult)
 print("Budget Fit Pre-check: \(initialFit.fits ? "FITS" : "OVERFLOW DETECTED (Deficit: \(initialFit.deficit) tokens)")")
@@ -83,6 +97,9 @@ print(String(format: "  - Reduction overhead:   %.2f ms", reductionResult.durati
 
 let finalFit = budgetManager.evaluateResultFit(resultText: reductionResult.reducedData)
 print("Budget Fit Post-check: \(finalFit.fits ? "FITS WITHIN BUDGET" : "OVERFLOW")")
+if reductionResult.reducedData.contains("92004") {
+    print("  ✓ Verification: Live Target Issue #92004 ('Inheriting isolation...') successfully preserved in reduced output!")
+}
 
 // STEP 7: Benchmark Comparison
 print("\n[STEP 7: BENCHMARK COMPARISON]")

@@ -83,6 +83,33 @@ public struct DemoScenario: Sendable {
         return tools
     }
 
+    /// Fetches real, live GitHub open issues from swiftlang/swift with label 'concurrency'.
+    public static func fetchLiveGitHubIssues() async throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+        process.arguments = [
+            "-s",
+            "-H", "User-Agent: MCPContextEngine-Agent/1.0",
+            "-H", "Accept: application/vnd.github.v3+json",
+            "https://api.github.com/repos/swiftlang/swift/issues?state=open&labels=concurrency&per_page=15"
+        ]
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+
+        try process.run()
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            throw NSError(domain: "GitHubAPI", code: Int(process.terminationStatus))
+        }
+        guard let jsonString = String(data: data, encoding: .utf8), jsonString.hasPrefix("[") else {
+            throw NSError(domain: "GitHubAPI", code: -1)
+        }
+        return jsonString
+    }
+
     /// Generates a realistic, large GitHub issue search response (typically 4,000+ tokens).
     public static func makeSyntheticLargeGitHubResult() -> String {
         var issues: [[String: Any]] = []
