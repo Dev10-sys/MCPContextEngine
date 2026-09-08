@@ -30,9 +30,7 @@ public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
         self.toolHandlers = handlers
     }
 
-    public func connect() async throws {
-        // Mock connection succeeds immediately
-    }
+    public func connect() async throws {}
 
     public func listTools() async throws -> [MCPToolDescriptor] {
         return registeredTools
