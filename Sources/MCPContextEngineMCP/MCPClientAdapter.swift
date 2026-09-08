@@ -114,11 +114,38 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
             MCPToolDescriptor(
                 name: mcpTool.name,
                 description: mcpTool.description,
-                inputSchema: .empty,
+                inputSchema: parseSchema(mcpTool.inputSchema),
                 serverId: self.serverId,
                 tags: [self.serverId]
             )
         }
+    }
+
+    /// Converts MCP SDK JSON schema value into the engine's lightweight ToolInputSchema.
+    private func parseSchema(_ schemaValue: Value?) -> ToolInputSchema {
+        guard case .object(let obj) = schemaValue else {
+            return .empty
+        }
+
+        var properties: [String: ToolInputSchema.PropertyDescriptor] = [:]
+        var required: [String] = []
+
+        if case .object(let props) = obj["properties"] {
+            for (propName, propValue) in props {
+                guard case .object(let propObj) = propValue else { continue }
+                let type: String
+                if case .string(let t) = propObj["type"] { type = t } else { type = "string" }
+                let description: String?
+                if case .string(let d) = propObj["description"] { description = d } else { description = nil }
+                properties[propName] = ToolInputSchema.PropertyDescriptor(type: type, description: description)
+            }
+        }
+
+        if case .array(let req) = obj["required"] {
+            required = req.compactMap { if case .string(let s) = $0 { return s } else { return nil } }
+        }
+
+        return ToolInputSchema(type: "object", properties: properties, required: required)
     }
 
     public func callTool(name: String, arguments: [String: Any]) async throws -> String {

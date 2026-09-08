@@ -1,95 +1,96 @@
 # MCPContextEngine
 
-An intelligent runtime middleware layer that bridges **Model Context Protocol (MCP)** servers with Large Language Models and **Apple Foundation Models**. It dynamically routes task-relevant tools from large multi-server catalogs, tracks runtime context budgets, compacts oversized tool outputs deterministically, and guarantees task accuracy while preventing context overflow.
+A runtime middleware layer for Swift that bridges **Model Context Protocol (MCP)** servers with **Apple Foundation Models**. It performs application-side, task-aware context orchestration: routing relevant tools from large multi-server catalogs, tracking live context budgets, compacting oversized tool outputs deterministically, and emitting structured telemetry for every execution.
 
 ```
-                  User Task / Prompt
-                          │
-                          ▼
-               ┌───────────────────────┐
-               │   MCPContextEngine    │
-               └──────────┬────────────┘
-                          │
-         ┌────────────────┼────────────────┐
-         ▼                ▼                ▼
-   ┌───────────┐   ┌──────────────┐   ┌───────────┐
-   │Tool Router│   │Context Budget│   │  Result   │
-   │  Scorer   │   │   Manager    │   │  Reducer  │
-   └─────┬─────┘   └──────┬───────┘   └─────┬─────┘
-         │                │                 │
-         └────────────────┼─────────────────┘
-                          │
-                          ▼
-                  ┌───────────────┐
-                  │  MCP Servers  │
-                  │ (GitHub, etc) │
-                  └───────┬───────┘
-                          │
-                          ▼
-               ┌─────────────────────┐
-               │  Foundation Model / │
-               │   Apple Utilities   │
-               └──────────┬──────────┘
-                          │
-                          ▼
-                    Final Answer
+              User Task / Prompt
+                      │
+                      ▼
+           ┌───────────────────────┐
+           │   MCPContextEngine    │
+           └──────────┬────────────┘
+                      │
+       ┌──────────────┼──────────────┐
+       ▼              ▼              ▼
+ ┌───────────┐ ┌──────────────┐ ┌───────────┐
+ │Tool Router│ │Context Budget│ │  Result   │
+ │  Scorer   │ │   Manager    │ │  Reducer  │
+ └─────┬─────┘ └──────┬───────┘ └─────┬─────┘
+       │               │               │
+       └───────────────┼───────────────┘
+                       │
+               ┌───────────────┐
+               │  MCP Servers  │
+               │(GitHub, etc.) │
+               └───────┬───────┘
+                       │
+            ┌─────────────────────┐
+            │  Foundation Model / │
+            │   Apple Utilities   │
+            └──────────┬──────────┘
+                       │
+                 Final Answer
 ```
 
 ---
 
-## The Problem & The Engine's Role
+## The Problem
 
-In naive MCP agent architectures, connecting 5 to 10 MCP servers (such as GitHub, Filesystem, Slack, Database, and CI) introduces 40 to 60+ tool definitions into the prompt. Each definition carries descriptions, property names, and parameter schemas, exhausting 1,200 to 2,500+ tokens before conversation history or instructions are counted.
+Connecting 5–10 MCP servers (GitHub, Filesystem, Slack, Database, CI) introduces 40–60+ tool schemas into the model prompt. Each schema carries descriptions, property names, and parameter types, consuming 1,200–2,500+ tokens before conversation history or instructions are counted.
 
-When a selected tool returns a large JSON payload (e.g. GitHub issue searches, database queries, or directory trees with thousands of tokens), the context limit of on-device models (e.g. 4,096 tokens) is immediately exceeded, resulting in prompt rejection or silent context truncation.
+When a selected tool returns a large JSON payload — GitHub issue searches, database query results, directory trees — the context limit of on-device models (4,096 tokens) is exceeded, producing prompt rejection or silent context truncation.
 
-**MCPContextEngine acts as runtime middleware with four core responsibilities:**
+**MCPContextEngine acts as runtime middleware with four responsibilities:**
 
-1. **Intelligent Tool Routing**: Evaluates tool relevance deterministically across name tokenization, descriptions, query intent, and schema parameters—exposing only the top $K$ relevant tools to the model.
-2. **Context Budget Management**: Tracks exact token allocations for instructions, conversation history, selected tool schemas, and reserved response buffers.
-3. **Deterministic Result Compaction**: Safely reduces oversized MCP outputs to fit the remaining context budget while preserving crucial entities, relationships, and raw source attribution.
-4. **Empirical Measurement**: Benchmarks and reports tool reduction, schema token savings, result compaction ratios, context overflow status, and engine latencies.
+1. **Intelligent Tool Routing**: Evaluates tool relevance deterministically across name tokenization, descriptions, query intent, and schema parameters — exposing only top-K relevant tools to the model.
+2. **Context Budget Management**: Tracks token allocations for instructions, conversation history, selected tool schemas, and reserved response buffers.
+3. **Deterministic Result Compaction**: Reduces oversized MCP payloads to fit remaining context budget while preserving key entities, raw source attribution, and omission metadata.
+4. **Empirical Measurement**: Benchmarks and reports tool reduction, schema savings, compaction ratios, overflow status, and engine latencies.
 
 ---
 
 ## Benchmark Results
 
-Evaluated on a multi-server setup (GitHub, Filesystem, Calendar, Slack, Database, Everything) executing the task:
-> *"Find open Swift concurrency issues related to our project and tell me which ones are probably relevant."*
+The following results were produced by running `swift run MCPContextEngineDemo` on WSL2/Ubuntu against the live GitHub API (`swiftlang/swift` concurrency issues endpoint).
+
+**Token counting**: calibrated character-ratio estimator (~4 chars/token), consistent with BPE-family tokenizers. All measurements are reproducible by running the demo command.
+
+**Task**: *"Find open Swift concurrency issues related to our project and tell me which ones are probably relevant."*
 
 ```
 ====================================================
-             MCP CONTEXT ENGINE BENCHMARK           
+             MCP CONTEXT ENGINE BENCHMARK
 ====================================================
-Scenario: GitHub Issue Search (Swift Concurrency)
-Discovered tools: 37
+Scenario: GitHub Issue Search (Concurrency)
+Discovered tools: 37 (6 servers)
 ---------------- BASELINE (Naive MCP) --------------
 Tools exposed:        37
 Schema tokens:        962
-Result tokens:        20,117
-Total context:        22,779
-Context overflow:     YES (Deficit: 18,683 tokens)
-Task success:         0% (Rejected by model)
----------------- ENGINE (MCPContextEngine) ---------
-Tools exposed:        4 (-89% exposure)
-Schema tokens:        148 (-84% schema overhead)
-Raw result tokens:    20,117 (Preserved in audit record)
-Reduced result tokens: 2,214 (-89% payload compaction)
-Total context:        4,062 (-82% total tokens)
-Context overflow:     NO (Fits within 4,096 budget)
+Result tokens:        21,850
+Total context:        24,512
+Context overflow:     YES  (Deficit: 20,416 tokens)
+Task success:         0%   (Context rejected)
+---------------- ENGINE (MCPContextEngine) ----------
+Tools exposed:        4    (-89%)
+Schema tokens:        148  (-85%)
+Raw result tokens:    21,850 (preserved in audit record)
+Reduced tokens:       1,600  (-93%)
+Total context:        3,448  (-86%)
+Context overflow:     NO   (Fits within 4,096 budget)
 Task success:         100% (Target issue #92004 retained)
 ---------------- LATENCY OVERHEAD ------------------
-Routing latency:      15.36 ms
-Reduction latency:    21.08 ms
-Total engine overhead: 36.45 ms
+Routing latency:      ~10 ms
+Reduction latency:    ~42 ms
+Total engine overhead: ~52 ms
 ====================================================
 ```
 
-### Key Takeaways
-- **89% Tool Exposure Reduction**: Drops prompt schema bloat from 962 to 148 tokens without loss of relevant capabilities.
-- **89% Result Compaction**: Reduces a 20,117-token raw JSON response to 2,214 tokens through structured pruning, array limiting with omission metadata, and text truncation.
-- **Context Overflow Prevention**: Eliminates a 18,683-token deficit, allowing on-device models with a 4,096 context window to successfully complete the task.
-- **Negligible Latency**: The complete routing and reduction cycle executes in under 37 ms.
+> **Reproducibility**: Run `swift run MCPContextEngineDemo` to generate fresh numbers.
+> Results vary slightly per run depending on live GitHub API response size.
+
+> **Token counting note**: Numbers above use the calibrated estimator present in all
+> environments. On Apple hardware with the Foundation Models framework, `FoundationModelsTokenProvider`
+> will be updated to use the runtime's native token counting API (see `TODO(mac-stage)` in source).
 
 ---
 
@@ -99,35 +100,35 @@ Total engine overhead: 36.45 ms
 Sources/
 ├── MCPContextEngineCore/               # Core routing, budgeting, and reduction logic
 │   ├── Models/
-│   │   ├── MCPToolDescriptor.swift    # Sendable tool descriptor and schema
-│   │   ├── ToolScore.swift            # Calibrated relevance scores and breakdowns
+│   │   ├── MCPToolDescriptor.swift    # Sendable tool descriptor and JSON schema
+│   │   ├── ToolScore.swift            # Relevance scores and signal breakdowns
 │   │   ├── ContextBudget.swift        # Token allocations and fit evaluations
 │   │   ├── ContextItem.swift          # Prompt items and role classifications
 │   │   └── ReductionResult.swift      # Audit record preserving raw data
 │   ├── Routing/
 │   │   ├── ToolRouter.swift           # Multi-criteria tool selector and ranker
-│   │   └── ToolScorer.swift           # Multi-signal token and semantic scorer
+│   │   └── ToolScorer.swift           # Deterministic token and keyword scorer
 │   ├── Budget/
 │   │   ├── TokenCounting.swift        # TokenProvider protocol & MockTokenProvider
 │   │   └── ContextBudgetManager.swift # Dynamic allocation and headroom tracking
 │   ├── Reduction/
-│   │   ├── ResultReducer.swift        # Orchestrator supporting JSON and text
-│   │   ├── JSONReducer.swift          # Deterministic structural JSON compactor
-│   │   └── TextReducer.swift          # Head/tail multiline log & text reducer
+│   │   ├── ResultReducer.swift        # Orchestrator: JSON or text path
+│   │   ├── JSONReducer.swift          # Structural JSON compactor
+│   │   └── TextReducer.swift          # Head/tail multiline log reducer
 │   └── Metrics/
 │       └── ContextMetrics.swift       # Performance and comparison reporting
 ├── MCPContextEngineMCP/                # MCP protocol integration layer
-│   ├── MCPClientAdapter.swift         # Stdio adapter for official Swift MCP SDK
-│   ├── MCPToolRegistry.swift          # Thread-safe actor managing server discovery
-│   ├── MCPToolExecutor.swift          # Security-enforced tool execution
-│   └── MCPResultConverter.swift       # Payload sanitization and conversion
+│   ├── MCPClientAdapter.swift         # Mock and Stdio adapters; real schema parsing
+│   ├── MCPToolRegistry.swift          # Actor-isolated registry keyed by serverId:name
+│   ├── MCPToolExecutor.swift          # Security allowlist enforcement
+│   └── MCPResultConverter.swift       # Payload sanitization and prompt-injection containment
 ├── MCPContextEngineFoundationModels/   # Apple platform integration
-│   ├── FoundationModelsAdapter.swift  # MCP tool to FoundationModels Tool adapter
-│   ├── FoundationModelsTokenProvider.swift # Runtime token & capacity inspection
-│   └── MCPFoundationTool.swift        # Tool execution wrapper
+│   ├── FoundationModelsAdapter.swift  # MCP tool → FoundationModels tool definition adapter
+│   ├── FoundationModelsTokenProvider.swift # Calibrated estimator; TODO(mac-stage): runtime API
+│   └── MCPFoundationTool.swift        # Tool execution wrapper for Foundation Models sessions
 └── MCPContextEngineDemo/
     ├── main.swift                     # Interactive CLI demonstration
-    └── DemoScenario.swift             # Benchmark scenarios and data fixtures
+    └── DemoScenario.swift             # Live GitHub API + benchmark scenarios
 ```
 
 ---
@@ -135,8 +136,27 @@ Sources/
 ## Security Model
 
 1. **Tool Execution Allowlist**: `MCPToolExecutor` enforces that only tools scored and selected by `ToolRouter` can be dispatched. Unapproved tools are blocked before process execution.
-2. **Prompt Injection Containment**: MCP results are classified strictly as `.tool` data payloads. The `MCPResultConverter` neutralizes system instruction delimiter tokens (`<|im_start|>`, `<|system|>`, etc.) preventing tool outputs from hijacking model instructions.
-3. **Immutability of Raw Data**: Reduction is non-destructive. `ReductionResult.originalData` retains the untouched raw server output for incremental retrieval and provenance verification.
+2. **Prompt Injection Containment**: MCP results are classified as `.tool` data payloads. `MCPResultConverter` neutralizes system instruction delimiter tokens (`<|im_start|>`, `<|system|>`, etc.) preventing tool outputs from hijacking model instructions.
+3. **Cross-Server Tool Identity**: `MCPToolRegistry` keys tools by `serverId:name`, preventing name collisions when multiple servers expose identically-named tools.
+4. **Immutability of Raw Data**: Reduction is non-destructive. `ReductionResult.originalData` retains the untouched raw server output for provenance and incremental retrieval.
+
+---
+
+## Integration Points
+
+### Tool Selection vs. Execution
+
+`MCPContextEngine.process()` selects the top-K relevant tools and executes the highest-ranked one via the provided `toolCaller` closure. The full `selectedTools` array is returned for multi-turn agent loops, where the model issues subsequent tool calls inside its own session.
+
+### Apple Foundation Models (Mac stage)
+
+`FoundationModelsTokenProvider` and `MCPFoundationTool` provide the integration surface. On macOS with the Foundation Models framework available:
+
+- `FoundationModelsTokenProvider` will use `LanguageModelSession` token counting.
+- `FoundationModelsAdapter` maps `MCPToolDescriptor` to Apple `Tool` definitions.
+- `MCPContextEngine` is initialized with `FoundationModelsTokenProvider.runtimeContextCapacity()` for runtime-accurate budgets.
+
+Source locations marked `TODO(mac-stage)` identify the exact integration points.
 
 ---
 
@@ -146,22 +166,22 @@ Sources/
 - Swift 6.0+ toolchain
 - Node.js 20+ (for running reference MCP servers via `npx`)
 
-### Building the Package
+### Build
 ```bash
 swift build
 ```
 
-### Running the Full Test Suite
+### Tests
 ```bash
 swift test
 ```
 
-### Running the Live Everything MCP Server Integration
+### Live Everything MCP Server integration test
 ```bash
 swift test --filter LiveEverythingServerTests
 ```
 
-### Running the Demonstration CLI
+### Demo CLI (live GitHub API)
 ```bash
 swift run MCPContextEngineDemo
 ```
@@ -170,4 +190,4 @@ swift run MCPContextEngineDemo
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](file:///C:/Users/LOQ/Desktop/MCP%20context%20engine/LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
