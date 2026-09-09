@@ -1,22 +1,25 @@
 import Foundation
 import MCPContextEngineCore
 
-/// Protocol modeling the executable tool contract expected by Apple Intelligence / Foundation Models sessions.
-public protocol FoundationModelExecutableTool: Sendable {
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
+/// Application-level bridge protocol defining executable tool contracts for MCP execution.
+public protocol MCPExecutableToolBridge: Sendable {
     var name: String { get }
     var description: String { get }
     var schema: ToolInputSchema { get }
     func execute(arguments: [String: Any]) async throws -> String
 }
 
-/// Encapsulates an MCP tool prepared for execution within Apple's Foundation Models framework.
-///
-/// Features:
-/// - Conforms to `FoundationModelExecutableTool`.
-/// - Exposes JSON Schema parameters for model function calling.
-/// - Supports integrated context-aware execution (`executeAndReduce`) that executes the tool
-///   and automatically compacts the raw result to strictly fit within available token headroom.
-public struct MCPFoundationTool: FoundationModelExecutableTool, Sendable {
+/// Backward compatibility alias for earlier versions of the engine.
+public typealias FoundationModelExecutableTool = MCPExecutableToolBridge
+
+/// Encapsulates an MCP tool prepared for execution within Apple's Foundation Models ecosystem.
+/// Conforms to `MCPExecutableToolBridge` for cross-platform model runtimes and provides
+/// automated result compaction against active context budgets.
+public struct MCPFoundationTool: MCPExecutableToolBridge, Sendable {
     public let descriptor: MCPToolDescriptor
     public let executeHandler: @Sendable ([String: Any]) async throws -> String
 
@@ -24,7 +27,7 @@ public struct MCPFoundationTool: FoundationModelExecutableTool, Sendable {
     public var description: String { descriptor.description ?? "" }
     public var schema: ToolInputSchema { descriptor.inputSchema }
 
-    /// Returns standard JSON Schema dictionary for Foundation Models function registration.
+    /// JSON Schema dictionary compatible with model function calling interfaces.
     public var functionCallingDeclaration: [String: Any] {
         return [
             "name": descriptor.name,
@@ -45,12 +48,11 @@ public struct MCPFoundationTool: FoundationModelExecutableTool, Sendable {
         self.executeHandler = executeHandler
     }
 
-    /// Direct execution with dictionary arguments.
     public func execute(arguments: [String: Any]) async throws -> String {
         try await executeHandler(arguments)
     }
 
-    /// Executes tool and automatically applies context budget compaction to guarantee compliance.
+    /// Executes tool and compacts the raw result to strictly fit within available token headroom.
     public func executeAndReduce(
         arguments: [String: Any],
         availableBudgetTokens: Int,
@@ -60,3 +62,28 @@ public struct MCPFoundationTool: FoundationModelExecutableTool, Sendable {
         return reducer.reduce(rawContent: rawResult, availableBudgetTokens: availableBudgetTokens)
     }
 }
+
+#if canImport(FoundationModels)
+/// Native Apple Foundation Models Tool implementation backed by an MCPToolDescriptor.
+/// Conforms directly to Apple's FoundationModels.Tool protocol on supported Apple platforms.
+public struct AppleMCPTool: Tool, Sendable {
+    public let name: String
+    public let description: String
+    public let descriptor: MCPToolDescriptor
+    public let executeHandler: @Sendable ([String: Any]) async throws -> String
+
+    public init(
+        descriptor: MCPToolDescriptor,
+        executeHandler: @escaping @Sendable ([String: Any]) async throws -> String
+    ) {
+        self.name = descriptor.name
+        self.description = descriptor.description ?? ""
+        self.descriptor = descriptor
+        self.executeHandler = executeHandler
+    }
+
+    public func call(arguments: [String: Any]) async throws -> String {
+        try await executeHandler(arguments)
+    }
+}
+#endif

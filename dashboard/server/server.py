@@ -10,7 +10,7 @@ import socketserver
 import os
 import sys
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 PORT = 3000
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -94,7 +94,7 @@ class TelemetryHandler(http.server.SimpleHTTPRequestHandler):
                 raw_body = self.rfile.read(content_length)
                 try:
                     event = json.loads(raw_body.decode('utf-8'))
-                    event["server_received_at"] = datetime.utcnow().isoformat() + "Z"
+                    event["server_received_at"] = datetime.now(timezone.utc).isoformat()
                     latest_telemetry = event
                     telemetry_history.append(event)
                     # Keep max 50 recent runs

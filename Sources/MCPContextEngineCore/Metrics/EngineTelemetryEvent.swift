@@ -15,12 +15,14 @@ public struct EngineTelemetryEvent: Sendable, Codable {
     public let reducedResultTokens: Int
     public let overflow: Bool
     public let budgetCompliant: Bool
+    public let contextFitSuccess: Bool
     public let toolExecutionSuccess: Bool
     public let routingLatencyMs: Double
     public let reductionLatencyMs: Double
     public let totalLatencyMs: Double
     public let targetPreserved: Bool
     public let taskSuccess: Bool
+    public let modelTaskSuccess: Bool?
 
     public init(
         runId: String = UUID().uuidString,
@@ -37,7 +39,8 @@ public struct EngineTelemetryEvent: Sendable, Codable {
         routingLatencyMs: Double,
         reductionLatencyMs: Double,
         targetPreserved: Bool = true,
-        taskSuccess: Bool? = nil
+        taskSuccess: Bool? = nil,
+        modelTaskSuccess: Bool? = nil
     ) {
         self.runId = runId
         self.timestamp = timestamp
@@ -50,14 +53,14 @@ public struct EngineTelemetryEvent: Sendable, Codable {
         self.overflow = overflow
         let resolvedBudgetCompliance = budgetCompliant ?? (!overflow)
         self.budgetCompliant = resolvedBudgetCompliance
+        self.contextFitSuccess = resolvedBudgetCompliance
         self.toolExecutionSuccess = toolExecutionSuccess
         self.routingLatencyMs = routingLatencyMs
         self.reductionLatencyMs = reductionLatencyMs
         self.totalLatencyMs = routingLatencyMs + reductionLatencyMs
         self.targetPreserved = targetPreserved
-        // Truthful taskSuccess: requires budget compliance, successful tool execution,
-        // and verified preservation of target search content.
         self.taskSuccess = taskSuccess ?? (resolvedBudgetCompliance && toolExecutionSuccess && targetPreserved)
+        self.modelTaskSuccess = modelTaskSuccess
     }
 
     /// Serializes event into human-readable JSON.

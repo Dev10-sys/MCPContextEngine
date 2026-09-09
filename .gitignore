@@ -9,3 +9,4 @@ xcuserdata/
 .idea/
 *.swp
 *~
+dashboard/server/data/telemetry_history.json

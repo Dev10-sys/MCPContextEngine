@@ -81,7 +81,8 @@ Reduced tokens:       1,600  (-93%)
 Total context:        3,448  (-86%)
 Context overflow:     NO   (Fits within 4,096 budget)
 Target preserved:     YES  (Issue #92004 retained)
-Task success:         100% (Within budget + search intent met)
+Context-fit success:  100% (Within budget headroom)
+Target preservation:  100% (Entity preserved in reduced payload)
 ---------------- LATENCY OVERHEAD ------------------
 Routing latency:      ~11 ms
 Reduction latency:    ~42 ms
@@ -91,7 +92,7 @@ Total engine overhead: ~53 ms
 
 ### Reproducible Multi-Scenario Benchmark Suite
 
-| Scenario ID | Task Query | Baseline Overflow | Engine Budget Compliant | Target Preserved | Task Success |
+| Scenario ID | Task Query | Baseline Overflow | Engine Budget Compliant | Target Preserved | Context-Fit Success |
 |---|---|:---:|:---:|:---:|:---:|
 | `scenario-1-concurrency` | Find open Swift concurrency data race issues | ❌ Overflow (+20K) | ✅ FITS | ✅ YES (#92004) | 100% |
 | `scenario-2-memory-leak` | Search memory leak in async stream actor buffer | ❌ Overflow (+18K) | ✅ FITS | ✅ YES (#92010) | 100% |
@@ -103,7 +104,7 @@ Total engine overhead: ~53 ms
 | `scenario-8-release-notes` | Generate changelog release notes for version 2.0 tag | ❌ Overflow (+11K) | ✅ FITS | ✅ YES (v2.0 notes) | 100% |
 | `scenario-9-auth-token` | Validate authentication token permissions and scope | ❌ Overflow (+9K) | ✅ FITS | ✅ YES (oauth scopes) | 100% |
 | `scenario-10-benchmark-perf` | Measure performance latency and memory footprint | ❌ Overflow (+13K) | ✅ FITS | ✅ YES (latency samples) | 100% |
-| **Aggregate Summary** | **10 Multi-Server Scenarios** | **0% Success** | **100% Compliant** | **100% Preserved** | **100% Success** |
+| **Aggregate Summary** | **10 Multi-Server Scenarios** | **0% Compliant** | **100% Compliant** | **100% Preserved** | **100% Context Fit** |
 
 ---
 
@@ -120,7 +121,7 @@ Sources/
 │   │   └── ReductionResult.swift      # Audit record preserving raw original data
 │   ├── Routing/
 │   │   ├── ToolRouter.swift           # Multi-criteria tool selector and ranker
-│   │   └── ToolScorer.swift           # Deterministic token and keyword scorer
+│   │   └── ToolScorer.swift           # Deterministic lexical and schema relevance scorer
 │   ├── Budget/
 │   │   ├── TokenCounting.swift        # TokenProvider protocol & MockTokenProvider
 │   │   └── ContextBudgetManager.swift # Dynamic allocation and headroom tracking
@@ -136,12 +137,12 @@ Sources/
 │   ├── MCPToolRegistry.swift          # Multi-server registry with collision prevention
 │   ├── MCPToolExecutor.swift          # Security allowlist & fully-qualified ID dispatch
 │   └── MCPResultConverter.swift       # Payload sanitization and prompt-injection containment
-├── MCPContextEngineFoundationModels/   # Apple platform integration
-│   ├── FoundationModelsAdapter.swift  # MCP tool → FoundationModels executable bridge
-│   ├── FoundationModelsTokenProvider.swift # NaturalLanguage / BPE counting & capacity introspection
-│   └── MCPFoundationTool.swift        # FoundationModelExecutableTool with auto-reduction
+├── MCPContextEngineFoundationModels/   # Apple platform integration layer
+│   ├── FoundationModelsAdapter.swift  # MCP tool → MCPExecutableToolBridge & Apple Tool
+│   ├── FoundationModelsTokenProvider.swift # Linguistic estimator & native FoundationModels token counting
+│   └── MCPFoundationTool.swift        # MCPExecutableToolBridge & AppleMCPTool (Tool conformance)
 └── MCPContextEngineDemo/
-    ├── main.swift                     # Interactive CLI demonstration & live telemetry sync
+    ├── main.swift                     # Interactive CLI demonstration & live telemetry streaming
     └── DemoScenario.swift             # Live GitHub API + benchmark scenarios
 ```
 
@@ -156,13 +157,11 @@ Sources/
 
 ---
 
-## Apple Platform & Foundation Models Integration
+## Apple Platform & Foundation Models Integration Layer
 
-- **Native Linguistic Tokenization**: When compiled on Apple platforms (macOS / iOS), `FoundationModelsTokenProvider` utilizes Apple's native `NaturalLanguage` framework (`NLTokenizer(unit: .word)`) scaled for BPE subword expansion. On Linux and Windows, it falls back to a calibrated BPE estimator (~4 chars/token).
-- **Dynamic Capacity Introspection**: Automatically introspects runtime constraints:
-  - Apple Neural Engine (ANE) On-Device: `4,096` tokens
-  - Private Cloud Compute (PCC): `32,768` tokens (activatable via `APPLE_INTELLIGENCE_PCC=1` or `MODEL_CONTEXT_CAPACITY`)
-- **Executable Foundation Models Bridge**: `FoundationModelsAdapter.bridgeAll(...)` maps MCP descriptors to `MCPFoundationTool`, providing standard function calling declarations and integrated `executeAndReduce` capabilities.
+- **Native Token Counting & Context Introspection**: When compiled with Apple's `FoundationModels` framework available, `FoundationModelsTokenProvider` leverages `SystemLanguageModel.default.contextSize` and `SystemLanguageModel.default.tokenCount(for:)`.
+- **Linguistic & Calibrated Estimators**: When `FoundationModels` is unavailable (Linux, Windows, or earlier macOS), token counting uses an Apple-platform linguistic estimator (`NLTokenizer`) scaled for technical text, and a calibrated cross-platform BPE estimator (~4 chars/token).
+- **Native Apple Tool Conformance**: Under `#if canImport(FoundationModels)`, `AppleMCPTool` conforms directly to Apple's `Tool` protocol (`call(arguments:)`), bridging MCP tool schemas into Apple Intelligence sessions. Across all platforms, `MCPExecutableToolBridge` (`FoundationModelExecutableTool`) provides a unified executable contract with automated context reduction.
 
 ---
 

@@ -2,9 +2,9 @@ import XCTest
 import MCPContextEngineCore
 import MCPContextEngineMCP
 
-/// Reproducible, programmatically measured task-success benchmark test suite.
+/// Reproducible, programmatically measured task benchmark test suite.
 /// Evaluates 10 distinct developer tasks across multi-server catalogs to verify
-/// context overflow prevention and target entity preservation rates.
+/// context overflow prevention (context-fit) and target entity preservation rates.
 final class TaskSuccessBenchmarkTests: XCTestCase {
     struct BenchmarkScenario {
         let id: String
@@ -49,7 +49,7 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
                 taskQuery: "Query database users table where active equals true",
                 targetKeyword: "users",
                 expectedToolName: "db_query",
-                rawPayload: "{\"rows\": [\(String(repeating: "{\"user_id\": 101, \"email\":\"dev@apple.com\", \"active\":true},", count: 60)){\"user_id\": 999}]}"
+                rawPayload: "{\"table\": \"users\", \"rows\": [\(String(repeating: "{\"user_id\": 101, \"email\":\"dev@apple.com\", \"active\":true},", count: 60)){\"user_id\": 999}]}"
             ),
             BenchmarkScenario(
                 id: "scenario-6-pr-review",
@@ -62,7 +62,7 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
                 id: "scenario-7-docker-logs",
                 taskQuery: "Fetch container logs and diagnostic crash trace",
                 targetKeyword: "crash",
-                expectedToolName: "fs_read_file",
+                expectedToolName: "monitoring_get_logs",
                 rawPayload: "2026-09-09 ERROR crash detected in worker thread\n" + String(repeating: "at com.apple.runtime.concurrency(Worker.swift:42)\n", count: 100)
             ),
             BenchmarkScenario(
@@ -76,14 +76,14 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
                 id: "scenario-9-auth-token",
                 taskQuery: "Validate authentication token permissions and scope",
                 targetKeyword: "token",
-                expectedToolName: "db_query",
+                expectedToolName: "db_verify_token",
                 rawPayload: "{\"token\": \"oauth-bearer-token\", \"scopes\": [\"read\", \"write\"], \"meta\": \"\(String(repeating: "security certificate authority ", count: 110))\"}"
             ),
             BenchmarkScenario(
                 id: "scenario-10-benchmark-perf",
                 taskQuery: "Measure performance latency and memory footprint",
                 targetKeyword: "latency",
-                expectedToolName: "everything_execute",
+                expectedToolName: "monitoring_get_metrics",
                 rawPayload: "{\"metric\": \"latency\", \"samples\": [\(String(repeating: "14.2, ", count: 600))15.0]}"
             )
         ]
@@ -104,7 +104,7 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
 
         var engineOverflowCount = 0
         var engineTargetPreservedCount = 0
-        var engineSuccessCount = 0
+        var engineContextFitCount = 0
 
         for scenario in scenarios {
             // --- 1. Baseline Run ---
@@ -131,35 +131,41 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
                 task: scenario.taskQuery,
                 availableTools: catalog,
                 topK: 4,
+                targetEvaluator: { _, reduced in
+                    reduced.lowercased().contains(scenario.targetKeyword.lowercased())
+                },
                 toolCaller: { _ in scenario.rawPayload }
             )
 
             if !result.fitsBudget {
                 engineOverflowCount += 1
+            } else {
+                engineContextFitCount += 1
             }
             if result.targetPreserved {
                 engineTargetPreservedCount += 1
             }
-            if result.taskSuccess {
-                engineSuccessCount += 1
-            }
 
             // Invariant assertions per scenario
             XCTAssertTrue(result.fitsBudget, "Engine execution must never exceed budget in \(scenario.id)")
+            XCTAssertTrue(result.contextFitSuccess)
+            XCTAssertTrue(result.targetPreserved, "Target keyword '\(scenario.targetKeyword)' must be preserved in reduced output")
             XCTAssertLessThanOrEqual(result.reducedTokens, result.budget.availableForResultTokens)
         }
 
         let baselineSuccessRate = Double(baselineSuccessCount) / Double(scenarios.count) * 100.0
-        let engineSuccessRate = Double(engineSuccessCount) / Double(scenarios.count) * 100.0
+        let engineContextFitRate = Double(engineContextFitCount) / Double(scenarios.count) * 100.0
+        let engineTargetPreservationRate = Double(engineTargetPreservedCount) / Double(scenarios.count) * 100.0
 
-        // Verifications:
-        // Baseline MUST experience 100% overflow failure due to 50 schemas + raw payloads
+        // Baseline results: 100% overflow failure
         XCTAssertEqual(baselineOverflowCount, scenarios.count, "Baseline must overflow on all 10 scenarios")
-        XCTAssertEqual(baselineSuccessRate, 0.0, "Baseline task success rate is 0% due to context exhaustion")
+        XCTAssertEqual(baselineSuccessRate, 0.0, "Baseline context-fit rate is 0% due to context exhaustion")
 
-        // Engine MUST achieve 100% context budget fit and 100% task success rate
+        // Engine results: 100% context-fit rate and 100% target preservation rate
         XCTAssertEqual(engineOverflowCount, 0, "Engine must have 0 context overflows")
-        XCTAssertEqual(engineSuccessCount, scenarios.count, "Engine must achieve 100% task success across all scenarios")
-        XCTAssertEqual(engineSuccessRate, 100.0, "Engine task success rate must be 100%")
+        XCTAssertEqual(engineContextFitCount, scenarios.count, "Engine must achieve 100% context-fit across all scenarios")
+        XCTAssertEqual(engineTargetPreservedCount, scenarios.count, "Engine must achieve 100% target preservation")
+        XCTAssertEqual(engineContextFitRate, 100.0)
+        XCTAssertEqual(engineTargetPreservationRate, 100.0)
     }
 }

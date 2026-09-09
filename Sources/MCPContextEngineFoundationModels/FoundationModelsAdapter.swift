@@ -40,6 +40,30 @@ public struct FoundationModelsAdapter: Sendable {
     }
 }
 
+#if canImport(FoundationModels)
+extension FoundationModelsAdapter {
+    /// Bridges an MCP descriptor into a native Apple FoundationModels.Tool instance.
+    public func appleTool(
+        descriptor: MCPToolDescriptor,
+        executor: MCPToolExecutor,
+        approvedTools: Set<String>? = nil
+    ) -> AppleMCPTool {
+        AppleMCPTool(descriptor: descriptor) { args in
+            try await executor.execute(descriptor: descriptor, arguments: args, approvedTools: approvedTools)
+        }
+    }
+
+    /// Bridges multiple MCP descriptors into native Apple FoundationModels.Tool instances.
+    public func appleTools(
+        descriptors: [MCPToolDescriptor],
+        executor: MCPToolExecutor,
+        approvedTools: Set<String>? = nil
+    ) -> [AppleMCPTool] {
+        descriptors.map { appleTool(descriptor: $0, executor: executor, approvedTools: approvedTools) }
+    }
+}
+#endif
+
 /// Standalone descriptor capturing the metadata required to bind to Apple's Tool abstraction.
 public struct FoundationToolDefinition: Hashable, Sendable, Codable {
     public let name: String

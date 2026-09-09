@@ -18,12 +18,12 @@ public protocol MCPClientProtocol: Sendable {
 public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
     public let serverId: String
     private var registeredTools: [MCPToolDescriptor]
-    private var toolHandlers: [String: @Sendable ([String: Any]) throws -> String]
+    private var toolHandlers: [String: @Sendable ([String: Any]) async throws -> String]
 
     public init(
         serverId: String,
         tools: [MCPToolDescriptor] = [],
-        handlers: [String: @Sendable ([String: Any]) throws -> String] = [:]
+        handlers: [String: @Sendable ([String: Any]) async throws -> String] = [:]
     ) {
         self.serverId = serverId
         self.registeredTools = tools
@@ -36,7 +36,7 @@ public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
         return registeredTools
     }
 
-    public func addTool(_ tool: MCPToolDescriptor, handler: (@Sendable ([String: Any]) throws -> String)? = nil) {
+    public func addTool(_ tool: MCPToolDescriptor, handler: (@Sendable ([String: Any]) async throws -> String)? = nil) {
         registeredTools.append(tool)
         if let handler = handler {
             toolHandlers[tool.name] = handler
@@ -47,7 +47,7 @@ public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
         guard let handler = toolHandlers[name] else {
             return "{\"status\": \"success\", \"tool\": \"\(name)\", \"result\": \"mock_executed\"}"
         }
-        return try handler(arguments)
+        return try await handler(arguments)
     }
 }
 

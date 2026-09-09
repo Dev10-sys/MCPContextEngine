@@ -20,6 +20,11 @@ public actor MCPToolRegistry {
         clients[client.serverId] = client
     }
 
+    /// Convenience alias for registering an MCP server client.
+    public func register(client: MCPClientProtocol) {
+        registerServer(client)
+    }
+
     /// Connects to all registered MCP servers and discovers available tools concurrently.
     public func discoverAllTools() async throws -> [MCPToolDescriptor] {
         var allDiscovered: [MCPToolDescriptor] = []

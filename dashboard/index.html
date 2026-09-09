@@ -922,23 +922,48 @@
         const data = await resp.json();
         if (!data || !data.runId) return;
 
+        // 1. Telemetry JSON viewer
         const jsonEl = document.getElementById('telemetry-json');
         if (jsonEl) {
           jsonEl.innerText = JSON.stringify(data, null, 2);
         }
 
+        // 2. Status Badge
         const badge = document.querySelector('.brand-badge');
         if (badge) {
-          badge.innerText = `● LIVE: ${data.runId.slice(0, 16)}`;
+          badge.innerText = `● LIVE: ${data.runId.slice(0, 18)}`;
           badge.style.color = '#3fb950';
           badge.style.borderColor = 'rgba(63, 185, 80, 0.4)';
+        }
+
+        // 3. Dynamic Gauges
+        const gaugeValues = document.querySelectorAll('.gauge-value');
+        if (gaugeValues.length >= 3) {
+          const headroom = Math.max(0, data.contextCapacity - data.reducedResultTokens - 1700);
+          gaugeValues[0].innerText = `${headroom.toLocaleString()} tokens`;
+          gaugeValues[1].innerText = `${data.selectedTools.length} / ${data.discoveredTools} tools`;
+          const raw = data.rawResultTokens || 1;
+          const reduced = data.reducedResultTokens || 0;
+          const ratio = Math.max(0, (1 - (reduced / raw)) * 100).toFixed(1);
+          gaugeValues[2].innerText = `${ratio}%`;
+        }
+
+        // 4. Progress Bars
+        const progressBars = document.querySelectorAll('.progress-bar');
+        if (progressBars.length >= 3) {
+          const usedPct = Math.min(100, Math.round((data.reducedResultTokens / (data.contextCapacity || 4096)) * 100));
+          progressBars[0].style.width = `${usedPct}%`;
+          const toolPct = Math.round((data.selectedTools.length / (data.discoveredTools || 1)) * 100);
+          progressBars[1].style.width = `${toolPct}%`;
+          const redPct = Math.min(100, Math.round((1 - (data.reducedResultTokens / (data.rawResultTokens || 1))) * 100));
+          progressBars[2].style.width = `${redPct}%`;
         }
       } catch (err) {
         // Fallback gracefully when running statically or offline
       }
     }
 
-    setInterval(pollTelemetry, 3000);
+    setInterval(pollTelemetry, 2500);
     pollTelemetry();
   </script>
 

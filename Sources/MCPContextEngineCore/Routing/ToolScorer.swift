@@ -1,7 +1,7 @@
 import Foundation
 
-/// High-precision, deterministic tool relevance scoring engine.
-/// Combines multiple semantic signals (name tokenization, description keywords, query intent, schema parameters)
+/// Deterministic lexical relevance scoring engine.
+/// Combines deterministic lexical signals (name tokenization, description keywords, query overlap, schema parameters)
 /// into a calibrated 0.0...1.0 score without non-deterministic LLM calls.
 public struct ToolScorer: Sendable {
     public struct Weights: Sendable {

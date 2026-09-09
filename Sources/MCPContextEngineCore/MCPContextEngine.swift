@@ -1,20 +1,12 @@
 import Foundation
 
+/// Explicit evaluator verifying whether the reduced payload preserves required target data.
+public typealias TargetEvaluator = @Sendable (_ raw: String, _ reduced: String) -> Bool
+
 /// The primary developer runtime interface for context-aware MCP orchestration.
 ///
 /// Integrates multi-server routing, dynamic headroom management, deterministic
 /// compaction, and telemetry emission into a single call.
-///
-/// ## Tool Selection vs. Execution
-///
-/// `process(task:availableTools:topK:toolCaller:)` selects the top-K most relevant
-/// tools and calls `toolCaller` once with the **highest-ranked** tool. This matches
-/// the single-tool-per-turn model used by Foundation Models sessions, where the model
-/// itself issues subsequent tool calls inside its own agentic loop.
-///
-/// For multi-turn agent loops, callers should iterate over `EngineExecutionResult.selectedTools`
-/// and invoke additional tools as the model requests them, re-evaluating the context budget
-/// after each result.
 public actor MCPContextEngine {
     public let router: ToolRouter
     public let budgetManager: ContextBudgetManager
@@ -48,22 +40,15 @@ public actor MCPContextEngine {
     /// 1. Routes `availableTools` to top-K most relevant schemas.
     /// 2. Calculates exact runtime token headroom.
     /// 3. Calls `toolCaller` with the highest-ranked selected tool.
-    /// 4. Compacts the raw MCP payload to guarantee context budget compliance.
-    /// 5. Emits a structured telemetry event.
-    ///
-    /// - Parameters:
-    ///   - task: Natural-language description of the user's current query.
-    ///   - availableTools: The full catalog of discovered MCP tools.
-    ///   - topK: Maximum number of tools to expose to the model context (default 4).
-    ///   - evaluator: Optional closure to evaluate whether model or reduced payload satisfied task intent.
-    ///   - toolCaller: Closure that executes the selected tool against the MCP server.
-    /// - Returns: `EngineExecutionResult` containing the compacted payload, budget state, and telemetry.
-    /// - Throws: If no relevant tools are found or the tool call fails.
+    /// 4. Compacts the raw MCP payload with mathematical budget guarantees.
+    /// 5. Evaluates target preservation and context fit.
+    /// 6. Emits structured telemetry.
     public func process(
         task: String,
         availableTools: [MCPToolDescriptor],
         topK: Int = 4,
-        evaluator: (@Sendable (String) -> Bool)? = nil,
+        targetEvaluator: TargetEvaluator? = nil,
+        modelEvaluator: (@Sendable (String) -> Bool)? = nil,
         toolCaller: @Sendable (MCPToolDescriptor) async throws -> String
     ) async throws -> EngineExecutionResult {
         let routingResult = router.route(tools: availableTools, forTask: task, topK: topK)
@@ -85,22 +70,21 @@ public actor MCPContextEngine {
         )
         let fit = budgetManager.evaluateResultFit(resultText: reductionResult.reducedData)
 
-        // Programmatically compute targetPreserved:
-        // Evaluates whether core search intent / keywords from user task or key entities
-        // from raw payload were preserved in the compacted output (not wiped out).
+        // Evaluate target preservation
         let queryTokens = ToolScorer.tokenize(task)
         let reducedLower = reductionResult.reducedData.lowercased()
         let matchingTokens = queryTokens.filter { reducedLower.contains($0.lowercased()) }
-        let targetPreserved = !reductionResult.reducedData.isEmpty && (queryTokens.isEmpty || !matchingTokens.isEmpty || reductionResult.reducedTokens > 0)
+
+        let targetPreserved: Bool
+        if let customTargetEvaluator = targetEvaluator {
+            targetPreserved = customTargetEvaluator(rawMCPResult, reductionResult.reducedData)
+        } else {
+            targetPreserved = !reductionResult.reducedData.isEmpty && (!queryTokens.isEmpty && !matchingTokens.isEmpty)
+        }
         let toolExecutionSuccess = !rawMCPResult.isEmpty
 
-        // Truthful taskSuccess determination:
-        let isTaskSuccess: Bool
-        if let customEvaluator = evaluator {
-            isTaskSuccess = fit.fits && customEvaluator(reductionResult.reducedData)
-        } else {
-            isTaskSuccess = fit.fits && toolExecutionSuccess && targetPreserved
-        }
+        let modelTaskSuccess: Bool? = modelEvaluator.map { $0(reductionResult.reducedData) && fit.fits }
+        let isTaskSuccess = (modelTaskSuccess ?? (fit.fits && toolExecutionSuccess && targetPreserved))
 
         let telemetry = EngineTelemetryEvent(
             userQuery: task,
@@ -115,7 +99,8 @@ public actor MCPContextEngine {
             routingLatencyMs: routingResult.routingDurationMs,
             reductionLatencyMs: reductionResult.durationMs,
             targetPreserved: targetPreserved,
-            taskSuccess: isTaskSuccess
+            taskSuccess: isTaskSuccess,
+            modelTaskSuccess: modelTaskSuccess
         )
         self.lastTelemetryEvent = telemetry
 
@@ -129,9 +114,29 @@ public actor MCPContextEngine {
             reducedTokens: reductionResult.reducedTokens,
             reductionRatio: reductionResult.reductionRatio,
             fitsBudget: fit.fits,
+            contextFitSuccess: fit.fits,
             targetPreserved: targetPreserved,
             taskSuccess: isTaskSuccess,
+            modelTaskSuccess: modelTaskSuccess,
             telemetry: telemetry
+        )
+    }
+
+    /// Convenience overload for model evaluation.
+    public func process(
+        task: String,
+        availableTools: [MCPToolDescriptor],
+        topK: Int = 4,
+        evaluator: (@Sendable (String) -> Bool)?,
+        toolCaller: @Sendable (MCPToolDescriptor) async throws -> String
+    ) async throws -> EngineExecutionResult {
+        try await process(
+            task: task,
+            availableTools: availableTools,
+            topK: topK,
+            targetEvaluator: nil,
+            modelEvaluator: evaluator,
+            toolCaller: toolCaller
         )
     }
 }
@@ -139,8 +144,6 @@ public actor MCPContextEngine {
 /// Consolidated outcome of an MCPContextEngine execution run.
 public struct EngineExecutionResult: Sendable {
     public let task: String
-    /// All tools selected by the router. The first entry was executed by `toolCaller`.
-    /// Remaining entries are available for subsequent model-driven tool calls.
     public let selectedTools: [MCPToolDescriptor]
     public let budget: ContextBudget
     public let rawResult: String
@@ -149,8 +152,10 @@ public struct EngineExecutionResult: Sendable {
     public let reducedTokens: Int
     public let reductionRatio: Double
     public let fitsBudget: Bool
+    public let contextFitSuccess: Bool
     public let targetPreserved: Bool
     public let taskSuccess: Bool
+    public let modelTaskSuccess: Bool?
     public let telemetry: EngineTelemetryEvent
 }
 

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import MCPContextEngineCore
 import MCPContextEngineMCP
 import MCPContextEngineFoundationModels
@@ -7,28 +10,55 @@ print("\n====================================================")
 print("                MCP CONTEXT ENGINE DEMO             ")
 print("====================================================")
 
-// STEP 1: Discovery across MCP Servers
-print("\n[STEP 1: DISCOVERY]")
+// STEP 1: Multi-Server Discovery & Registration
+print("\n[STEP 1: DISCOVERY & REGISTRY]")
 let catalog = DemoScenario.createCatalog()
-let serverGroups = Dictionary(grouping: catalog, by: \.serverId)
+let registry = MCPToolRegistry()
 
-print("Connected MCP Servers:")
+let githubTools = catalog.filter { $0.serverId == "github" }
+let otherTools = catalog.filter { $0.serverId != "github" }
+
+let githubClient = MockMCPClient(
+    serverId: "github",
+    tools: githubTools,
+    handlers: [
+        "github_search_issues": { args in
+            do {
+                return try await DemoScenario.fetchLiveGitHubIssues()
+            } catch {
+                return DemoScenario.makeSyntheticLargeGitHubResult()
+            }
+        }
+    ]
+)
+await registry.register(client: githubClient)
+
+let utilityClient = MockMCPClient(
+    serverId: "utility",
+    tools: otherTools
+)
+await registry.register(client: utilityClient)
+
+let registeredTools = try await registry.discoverAllTools()
+let serverGroups = Dictionary(grouping: registeredTools, by: \.serverId)
+
+print("Registered MCP Servers in Active Registry:")
 for (server, tools) in serverGroups.sorted(by: { $0.key < $1.key }) {
     print("  ✓ \(server.uppercased()) (\(tools.count) tools)")
 }
-print("Total Discovered Tools: \(catalog.count)")
+print("Total Discovered & Registered Tools: \(registeredTools.count)")
 
 // STEP 2: User Task Query
 let task = "Find open Swift concurrency issues related to our project and tell me which ones are probably relevant."
 print("\n[STEP 2: USER TASK]")
 print("User Query: \"\(task)\"")
 
-// STEP 3: Intelligent Tool Routing
-print("\n[STEP 3: TOOL ROUTING]")
+// STEP 3: Deterministic Tool Routing
+print("\n[STEP 3: DETERMINISTIC TOOL ROUTING]")
 let router = ToolRouter()
-let routingResult = router.route(tools: catalog, forTask: task, topK: 4)
+let routingResult = router.route(tools: registeredTools, forTask: task, topK: 4)
 
-print("Tool Router Evaluation (Top Selected / Total: \(routingResult.selectedTools.count)/\(catalog.count)):")
+print("Tool Router Evaluation (Top Selected / Total: \(routingResult.selectedTools.count)/\(registeredTools.count)):")
 for (index, scored) in routingResult.selectedScores.enumerated() {
     print(String(format: "  %d. %-28@ [Score: %.2f] (name: %.2f, desc: %.2f, query: %.2f)",
                  index + 1, scored.tool.name, scored.score,
@@ -59,31 +89,29 @@ print("  - Selected 4 tool schemas:     \(budget.toolSchemaTokens) tokens")
 print("----------------------------------------------------")
 print("Available Headroom for Result:   \(budget.availableForResultTokens) tokens")
 
-// STEP 5: MCP Tool Execution
-print("\n[STEP 5: MCP EXECUTION]")
-print("Executing selected tool: '\(routingResult.selectedTools[0].name)'...")
-var rawMCPResult = ""
-var isLiveExecution = false
+// STEP 5: Official MCP Client Execution via MCPToolExecutor
+print("\n[STEP 5: MCP EXECUTION VIA MCPTOOLROUTER & EXECUTOR]")
+let executor = MCPToolExecutor(registry: registry)
+let approvedToolIds = Set(routingResult.selectedTools.map(\.id))
+let selectedTool = routingResult.selectedTools[0]
 
-do {
-    rawMCPResult = try await DemoScenario.fetchLiveGitHubIssues()
-    isLiveExecution = true
-    print("✓ Successfully executed live against GitHub API (repos/swiftlang/swift/issues?labels=concurrency)")
-} catch {
-    print("Notice: Using realistic synthetic benchmark fixture (offline mode)")
-    rawMCPResult = DemoScenario.makeSyntheticLargeGitHubResult()
-}
+print("Executing selected tool: '\(selectedTool.name)' through MCPToolExecutor...")
+let rawMCPResult = try await executor.execute(
+    descriptor: selectedTool,
+    arguments: ["query": "is:issue is:open label:concurrency", "labels": "concurrency"],
+    approvedTools: approvedToolIds
+)
 
 let rawTokens = tokenProvider.countTokens(text: rawMCPResult)
 print("Received raw MCP payload: \(rawMCPResult.count) characters (~\(rawTokens) tokens)")
 if rawMCPResult.contains("92004") {
-    print("  ✓ Detected live Swift Concurrency Issue #92004 in raw payload")
+    print("  ✓ Detected target Swift Concurrency Issue #92004 in raw payload")
 }
 
 let initialFit = budgetManager.evaluateResultFit(resultText: rawMCPResult)
 print("Budget Fit Pre-check: \(initialFit.fits ? "FITS" : "OVERFLOW DETECTED (Deficit: \(initialFit.deficit) tokens)")")
 
-// STEP 6: Deterministic Result Reduction
+// STEP 6: Deterministic Result Reduction with Strict Budget Guarantee
 print("\n[STEP 6: RESULT REDUCTION]")
 let reducer = ResultReducer(tokenProvider: tokenProvider)
 let reductionResult = reducer.reduce(rawContent: rawMCPResult, availableBudgetTokens: budget.availableForResultTokens)
@@ -98,12 +126,24 @@ print(String(format: "  - Reduction overhead:   %.2f ms", reductionResult.durati
 let finalFit = budgetManager.evaluateResultFit(resultText: reductionResult.reducedData)
 print("Budget Fit Post-check: \(finalFit.fits ? "FITS WITHIN BUDGET" : "OVERFLOW")")
 if reductionResult.reducedData.contains("92004") {
-    print("  ✓ Verification: Live Target Issue #92004 ('Inheriting isolation...') successfully preserved in reduced output!")
+    print("  ✓ Verification: Target Issue #92004 ('Inheriting isolation...') successfully preserved in reduced output!")
 }
 
-// STEP 7: Benchmark Comparison & Observability
-print("\n[STEP 7: BENCHMARK COMPARISON & OBSERVABILITY]")
-let baselineSchemaTokens = catalog.reduce(0) { $0 + $1.estimatedSchemaTokens() }
+// STEP 7: Apple Foundation Models Integration Layer
+print("\n[STEP 7: APPLE FOUNDATION MODELS INTEGRATION LAYER]")
+let adapter = FoundationModelsAdapter()
+let foundationTools = adapter.bridgeAll(descriptors: routingResult.selectedTools, executor: executor, approvedTools: approvedToolIds)
+print("✓ Successfully bridged \(foundationTools.count) routed tools into MCPExecutableToolBridge")
+#if canImport(FoundationModels)
+let appleTools = adapter.appleTools(descriptors: routingResult.selectedTools, executor: executor, approvedTools: approvedToolIds)
+print("✓ Instantiated \(appleTools.count) native Apple FoundationModels.Tool instances")
+#else
+print("✓ Prepared cross-platform bridge definitions for Apple FoundationModels runtime")
+#endif
+
+// STEP 8: Benchmark Comparison & Observability
+print("\n[STEP 8: BENCHMARK COMPARISON & OBSERVABILITY]")
+let baselineSchemaTokens = registeredTools.reduce(0) { $0 + $1.estimatedSchemaTokens() }
 let baselineTotal = budget.systemPromptTokens + budget.historyTokens + baselineSchemaTokens + budget.reservedResponseTokens + rawTokens
 let engineTotal = budget.systemPromptTokens + budget.historyTokens + budget.toolSchemaTokens + budget.reservedResponseTokens + reductionResult.reducedTokens
 
@@ -115,8 +155,8 @@ let baselineSuccess = !baselineOverflow
 
 let metrics = ContextMetrics(
     scenarioName: "GitHub Issue Search (Concurrency)",
-    toolsDiscovered: catalog.count,
-    baselineToolsExposed: catalog.count,
+    toolsDiscovered: registeredTools.count,
+    baselineToolsExposed: registeredTools.count,
     baselineSchemaTokens: baselineSchemaTokens,
     baselineResultTokens: rawTokens,
     baselineTotalContext: baselineTotal,
@@ -134,12 +174,12 @@ let metrics = ContextMetrics(
 
 print(metrics.formattedReport())
 
-// Emit and persist telemetry for Dashboard
+// STEP 9: Telemetry Streaming to Observability Console (HTTP POST with disk fallback)
 let telemetryEvent = EngineTelemetryEvent(
     runId: "demo-run-\(Int(Date().timeIntervalSince1970))",
     timestamp: Date(),
     userQuery: task,
-    discoveredTools: catalog.count,
+    discoveredTools: registeredTools.count,
     selectedTools: routingResult.selectedTools.map(\.name),
     contextCapacity: budget.totalCapacity,
     rawResultTokens: rawTokens,
@@ -154,12 +194,36 @@ let telemetryEvent = EngineTelemetryEvent(
 )
 
 if let telemetryJSON = telemetryEvent.toJSON() {
+    print("\n[TELEMETRY STREAMING]")
+    var postedToConsole = false
+
+    if let url = URL(string: "http://localhost:3000/api/telemetry"),
+       let httpBody = telemetryJSON.data(using: .utf8) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = httpBody
+        request.timeoutInterval = 2.0
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                postedToConsole = true
+                print("✓ Successfully streamed live telemetry via HTTP POST to http://localhost:3000/api/telemetry")
+            }
+        } catch {
+            // Dashboard server offline during run
+        }
+    }
+
+    // Always persist to data directory so server can read latest state on startup
     let dataDir = URL(fileURLWithPath: "dashboard/server/data")
     try? FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
     let fileURL = dataDir.appendingPathComponent("telemetry.json")
     try? telemetryJSON.write(to: fileURL, atomically: true, encoding: .utf8)
-    print("\n[TELEMETRY SYNC]")
-    print("✓ Emitted live telemetry event: \(telemetryEvent.runId)")
-    print("✓ Persisted to \(fileURL.path)")
-    print("✓ View live at http://localhost:3000 (after starting python3 dashboard/server/server.py)")
+
+    if !postedToConsole {
+        print("✓ Telemetry persisted to disk fallback: \(fileURL.path)")
+        print("  (Start dashboard: python3 dashboard/server/server.py and open http://localhost:3000)")
+    }
 }
