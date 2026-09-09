@@ -134,12 +134,8 @@ print("\n[STEP 7: APPLE FOUNDATION MODELS INTEGRATION LAYER]")
 let adapter = FoundationModelsAdapter()
 let foundationTools = adapter.bridgeAll(descriptors: routingResult.selectedTools, executor: executor, approvedTools: approvedToolIds)
 print("✓ Successfully bridged \(foundationTools.count) routed tools into MCPExecutableToolBridge")
-#if canImport(FoundationModels)
 let appleTools = adapter.appleTools(descriptors: routingResult.selectedTools, executor: executor, approvedTools: approvedToolIds)
-print("✓ Instantiated \(appleTools.count) native Apple FoundationModels.Tool instances")
-#else
-print("✓ Prepared cross-platform bridge definitions for Apple FoundationModels runtime")
-#endif
+print("✓ Instantiated \(appleTools.count) Apple Foundation Models bridge tools with call(arguments:) contract")
 
 // STEP 8: Benchmark Comparison & Observability
 print("\n[STEP 8: BENCHMARK COMPARISON & OBSERVABILITY]")

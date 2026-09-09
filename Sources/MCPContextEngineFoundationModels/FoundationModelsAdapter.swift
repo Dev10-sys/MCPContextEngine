@@ -2,10 +2,6 @@ import Foundation
 import MCPContextEngineCore
 import MCPContextEngineMCP
 
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
-
 /// Bridges MCP tool descriptors into Apple Foundation Models tool specifications and executable bridges.
 public struct FoundationModelsAdapter: Sendable {
     public init() {}
@@ -38,11 +34,8 @@ public struct FoundationModelsAdapter: Sendable {
     ) -> [MCPFoundationTool] {
         descriptors.map { bridge(descriptor: $0, executor: executor, approvedTools: approvedTools) }
     }
-}
 
-#if canImport(FoundationModels)
-extension FoundationModelsAdapter {
-    /// Bridges an MCP descriptor into a native Apple FoundationModels.Tool instance.
+    /// Bridges an MCP descriptor into a dedicated `AppleMCPTool` instance.
     public func appleTool(
         descriptor: MCPToolDescriptor,
         executor: MCPToolExecutor,
@@ -53,7 +46,7 @@ extension FoundationModelsAdapter {
         }
     }
 
-    /// Bridges multiple MCP descriptors into native Apple FoundationModels.Tool instances.
+    /// Bridges multiple MCP descriptors into `AppleMCPTool` instances.
     public func appleTools(
         descriptors: [MCPToolDescriptor],
         executor: MCPToolExecutor,
@@ -62,7 +55,6 @@ extension FoundationModelsAdapter {
         descriptors.map { appleTool(descriptor: $0, executor: executor, approvedTools: approvedTools) }
     }
 }
-#endif
 
 /// Standalone descriptor capturing the metadata required to bind to Apple's Tool abstraction.
 public struct FoundationToolDefinition: Hashable, Sendable, Codable {

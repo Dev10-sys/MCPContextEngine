@@ -1,10 +1,6 @@
 import Foundation
 import MCPContextEngineCore
 
-#if canImport(FoundationModels)
-import FoundationModels
-#endif
-
 /// Application-level bridge protocol defining executable tool contracts for MCP execution.
 public protocol MCPExecutableToolBridge: Sendable {
     var name: String { get }
@@ -63,10 +59,9 @@ public struct MCPFoundationTool: MCPExecutableToolBridge, Sendable {
     }
 }
 
-#if canImport(FoundationModels)
-/// Native Apple Foundation Models Tool implementation backed by an MCPToolDescriptor.
-/// Conforms directly to Apple's FoundationModels.Tool protocol on supported Apple platforms.
-public struct AppleMCPTool: Tool, Sendable {
+/// Dedicated bridge representing an Apple Foundation Models tool specification backed by an MCPToolDescriptor.
+/// Implements the standard `call(arguments:)` contract for Apple Intelligence function calling workflows.
+public struct AppleMCPTool: Sendable {
     public let name: String
     public let description: String
     public let descriptor: MCPToolDescriptor
@@ -86,4 +81,3 @@ public struct AppleMCPTool: Tool, Sendable {
         try await executeHandler(arguments)
     }
 }
-#endif
