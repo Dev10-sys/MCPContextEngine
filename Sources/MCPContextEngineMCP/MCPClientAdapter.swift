@@ -3,7 +3,11 @@ import MCPContextEngineCore
 
 #if canImport(MCP)
 import MCP
+#if canImport(System)
+import System
+#else
 import SystemPackage
+#endif
 #endif
 
 /// Protocol defining interactions with an MCP server (tool discovery and execution).
@@ -93,10 +97,17 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
         try proc.run()
         self.process = proc
 
+        #if canImport(System)
+        let transport = StdioTransport(
+            input: System.FileDescriptor(rawValue: outputPipe.fileHandleForReading.fileDescriptor),
+            output: System.FileDescriptor(rawValue: inputPipe.fileHandleForWriting.fileDescriptor)
+        )
+        #else
         let transport = StdioTransport(
             input: FileDescriptor(rawValue: outputPipe.fileHandleForReading.fileDescriptor),
             output: FileDescriptor(rawValue: inputPipe.fileHandleForWriting.fileDescriptor)
         )
+        #endif
         let mcpClient = MCP.Client(name: "MCPContextEngine", version: "1.0.0")
         try await mcpClient.connect(transport: transport)
 
