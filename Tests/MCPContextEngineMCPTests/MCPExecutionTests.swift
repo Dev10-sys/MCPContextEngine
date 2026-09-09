@@ -30,6 +30,41 @@ final class MCPExecutionTests: XCTestCase {
         XCTAssertTrue(result.contains("92004"))
     }
 
+    func testExecutionByFullyQualifiedIdAndDescriptor() async throws {
+        let registry = MCPToolRegistry()
+        let toolA = MCPToolDescriptor(name: "search", serverId: "server_a")
+        let toolB = MCPToolDescriptor(name: "search", serverId: "server_b")
+
+        let clientA = MockMCPClient(
+            serverId: "server_a",
+            tools: [toolA],
+            handlers: ["search": { _ in "result_from_server_a" }]
+        )
+        let clientB = MockMCPClient(
+            serverId: "server_b",
+            tools: [toolB],
+            handlers: ["search": { _ in "result_from_server_b" }]
+        )
+
+        await registry.registerServer(clientA)
+        await registry.registerServer(clientB)
+        _ = try await registry.discoverAllTools()
+
+        let executor = MCPToolExecutor(registry: registry)
+
+        // Verify ambiguity check
+        let isAmbiguous = await registry.isAmbiguous(toolName: "search")
+        XCTAssertTrue(isAmbiguous)
+
+        // Execute server A explicitly by ID
+        let resA = try await executor.execute(identifier: "server_a:search")
+        XCTAssertEqual(resA, "result_from_server_a")
+
+        // Execute server B explicitly by descriptor
+        let resB = try await executor.execute(descriptor: toolB)
+        XCTAssertEqual(resB, "result_from_server_b")
+    }
+
     func testUnapprovedToolExecutionBlockedBySecurityPolicy() async throws {
         let registry = MCPToolRegistry()
         let tool = MCPToolDescriptor(name: "danger_tool", serverId: "test")

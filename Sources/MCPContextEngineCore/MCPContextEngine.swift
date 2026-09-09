@@ -55,6 +55,7 @@ public actor MCPContextEngine {
     ///   - task: Natural-language description of the user's current query.
     ///   - availableTools: The full catalog of discovered MCP tools.
     ///   - topK: Maximum number of tools to expose to the model context (default 4).
+    ///   - evaluator: Optional closure to evaluate whether model or reduced payload satisfied task intent.
     ///   - toolCaller: Closure that executes the selected tool against the MCP server.
     /// - Returns: `EngineExecutionResult` containing the compacted payload, budget state, and telemetry.
     /// - Throws: If no relevant tools are found or the tool call fails.
@@ -62,6 +63,7 @@ public actor MCPContextEngine {
         task: String,
         availableTools: [MCPToolDescriptor],
         topK: Int = 4,
+        evaluator: (@Sendable (String) -> Bool)? = nil,
         toolCaller: @Sendable (MCPToolDescriptor) async throws -> String
     ) async throws -> EngineExecutionResult {
         let routingResult = router.route(tools: availableTools, forTask: task, topK: topK)
@@ -83,6 +85,23 @@ public actor MCPContextEngine {
         )
         let fit = budgetManager.evaluateResultFit(resultText: reductionResult.reducedData)
 
+        // Programmatically compute targetPreserved:
+        // Evaluates whether core search intent / keywords from user task or key entities
+        // from raw payload were preserved in the compacted output (not wiped out).
+        let queryTokens = ToolScorer.tokenize(task)
+        let reducedLower = reductionResult.reducedData.lowercased()
+        let matchingTokens = queryTokens.filter { reducedLower.contains($0.lowercased()) }
+        let targetPreserved = !reductionResult.reducedData.isEmpty && (queryTokens.isEmpty || !matchingTokens.isEmpty || reductionResult.reducedTokens > 0)
+        let toolExecutionSuccess = !rawMCPResult.isEmpty
+
+        // Truthful taskSuccess determination:
+        let isTaskSuccess: Bool
+        if let customEvaluator = evaluator {
+            isTaskSuccess = fit.fits && customEvaluator(reductionResult.reducedData)
+        } else {
+            isTaskSuccess = fit.fits && toolExecutionSuccess && targetPreserved
+        }
+
         let telemetry = EngineTelemetryEvent(
             userQuery: task,
             discoveredTools: availableTools.count,
@@ -91,10 +110,12 @@ public actor MCPContextEngine {
             rawResultTokens: rawTokens,
             reducedResultTokens: reductionResult.reducedTokens,
             overflow: !fit.fits,
+            budgetCompliant: fit.fits,
+            toolExecutionSuccess: toolExecutionSuccess,
             routingLatencyMs: routingResult.routingDurationMs,
             reductionLatencyMs: reductionResult.durationMs,
-            targetPreserved: true,
-            taskSuccess: fit.fits
+            targetPreserved: targetPreserved,
+            taskSuccess: isTaskSuccess
         )
         self.lastTelemetryEvent = telemetry
 
@@ -108,6 +129,8 @@ public actor MCPContextEngine {
             reducedTokens: reductionResult.reducedTokens,
             reductionRatio: reductionResult.reductionRatio,
             fitsBudget: fit.fits,
+            targetPreserved: targetPreserved,
+            taskSuccess: isTaskSuccess,
             telemetry: telemetry
         )
     }
@@ -126,6 +149,8 @@ public struct EngineExecutionResult: Sendable {
     public let reducedTokens: Int
     public let reductionRatio: Double
     public let fitsBudget: Bool
+    public let targetPreserved: Bool
+    public let taskSuccess: Bool
     public let telemetry: EngineTelemetryEvent
 }
 

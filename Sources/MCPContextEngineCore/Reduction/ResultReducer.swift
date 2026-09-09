@@ -61,19 +61,103 @@ public struct ResultReducer: Sendable {
             appliedStrategies = strategies
         }
 
-        let reducedTokens = tokenProvider.countTokens(text: reducedContent)
+        var finalReducedContent = reducedContent
+        var finalStrategies = appliedStrategies
+        var finalReducedTokens = tokenProvider.countTokens(text: finalReducedContent)
+
+        // STRICT INVARIANT ENFORCEMENT:
+        // If progressive structural reduction did not bring the payload below availableBudgetTokens
+        // (e.g. monolithic keys, tight budget headroom), apply deterministic hard-ceiling truncation
+        // to mathematically guarantee that reducedTokens <= availableBudgetTokens.
+        if finalReducedTokens > availableBudgetTokens && availableBudgetTokens > 0 {
+            let (guaranteedContent, ceilingStrategy) = enforceStrictBudgetCeiling(
+                content: finalReducedContent,
+                maxBudgetTokens: availableBudgetTokens,
+                isJSON: isLikelyJSON(finalReducedContent)
+            )
+            finalReducedContent = guaranteedContent
+            finalStrategies.append(ceilingStrategy)
+            finalReducedTokens = tokenProvider.countTokens(text: finalReducedContent)
+        } else if availableBudgetTokens <= 0 {
+            finalReducedContent = ""
+            finalStrategies.append("zero_budget_prune")
+            finalReducedTokens = 0
+        }
+
         let endTime = DispatchTime.now()
         let durationNanos = endTime.uptimeNanoseconds - startTime.uptimeNanoseconds
         let durationMs = Double(durationNanos) / 1_000_000.0
 
         return ReductionResult(
             originalTokens: originalTokens,
-            reducedTokens: reducedTokens,
+            reducedTokens: finalReducedTokens,
             originalData: rawContent,
-            reducedData: reducedContent,
-            appliedStrategies: appliedStrategies,
+            reducedData: finalReducedContent,
+            appliedStrategies: finalStrategies,
             durationMs: durationMs
         )
+    }
+
+    /// Hard deterministic safety net that slices content to guarantee token budget compliance.
+    private func enforceStrictBudgetCeiling(
+        content: String,
+        maxBudgetTokens: Int,
+        isJSON: Bool
+    ) -> (String, String) {
+        // If content already fits, return as-is
+        if tokenProvider.countTokens(text: content) <= maxBudgetTokens {
+            return (content, "ceiling_passthrough")
+        }
+
+        let marker = "... [TRUNCATED TO STRICT BUDGET: \(maxBudgetTokens) TOKENS]"
+        let markerTokens = tokenProvider.countTokens(text: marker)
+
+        if maxBudgetTokens <= markerTokens {
+            // Extreme edge case: budget is smaller than truncation marker
+            var low = 0
+            var high = content.count
+            var bestSlice = ""
+            while low <= high {
+                let mid = (low + high) / 2
+                let candidate = String(content.prefix(mid))
+                if tokenProvider.countTokens(text: candidate) <= maxBudgetTokens {
+                    bestSlice = candidate
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
+            }
+            return (bestSlice, "strict_char_ceiling")
+        }
+
+        let targetContentTokens = maxBudgetTokens - markerTokens
+        var low = 0
+        var high = content.count
+        var bestContent = ""
+
+        while low <= high {
+            let mid = (low + high) / 2
+            let candidate = String(content.prefix(mid))
+            if tokenProvider.countTokens(text: candidate) <= targetContentTokens {
+                bestContent = candidate
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        let result = bestContent + "\n" + marker
+        // Double check invariant
+        if tokenProvider.countTokens(text: result) <= maxBudgetTokens {
+            return (result, "strict_budget_ceiling_enforced")
+        } else {
+            // Absolute fallback: trim character by character from the end
+            var trimmed = result
+            while !trimmed.isEmpty && tokenProvider.countTokens(text: trimmed) > maxBudgetTokens {
+                trimmed.removeLast()
+            }
+            return (trimmed, "strict_char_clamp")
+        }
     }
 
     private func isLikelyJSON(_ text: String) -> Bool {

@@ -3,7 +3,7 @@ import Foundation
 /// Standardized runtime observability event emitted by MCPContextEngine.
 ///
 /// Designed to populate developer dashboards (e.g. MCP Context Console)
-/// without exposing sensitive payload data over the wire.
+/// with truthful, granular metrics without exposing sensitive payload data over the wire.
 public struct EngineTelemetryEvent: Sendable, Codable {
     public let runId: String
     public let timestamp: Date
@@ -14,6 +14,8 @@ public struct EngineTelemetryEvent: Sendable, Codable {
     public let rawResultTokens: Int
     public let reducedResultTokens: Int
     public let overflow: Bool
+    public let budgetCompliant: Bool
+    public let toolExecutionSuccess: Bool
     public let routingLatencyMs: Double
     public let reductionLatencyMs: Double
     public let totalLatencyMs: Double
@@ -30,10 +32,12 @@ public struct EngineTelemetryEvent: Sendable, Codable {
         rawResultTokens: Int,
         reducedResultTokens: Int,
         overflow: Bool,
+        budgetCompliant: Bool? = nil,
+        toolExecutionSuccess: Bool = true,
         routingLatencyMs: Double,
         reductionLatencyMs: Double,
         targetPreserved: Bool = true,
-        taskSuccess: Bool = true
+        taskSuccess: Bool? = nil
     ) {
         self.runId = runId
         self.timestamp = timestamp
@@ -44,11 +48,16 @@ public struct EngineTelemetryEvent: Sendable, Codable {
         self.rawResultTokens = rawResultTokens
         self.reducedResultTokens = reducedResultTokens
         self.overflow = overflow
+        let resolvedBudgetCompliance = budgetCompliant ?? (!overflow)
+        self.budgetCompliant = resolvedBudgetCompliance
+        self.toolExecutionSuccess = toolExecutionSuccess
         self.routingLatencyMs = routingLatencyMs
         self.reductionLatencyMs = reductionLatencyMs
         self.totalLatencyMs = routingLatencyMs + reductionLatencyMs
         self.targetPreserved = targetPreserved
-        self.taskSuccess = taskSuccess
+        // Truthful taskSuccess: requires budget compliance, successful tool execution,
+        // and verified preservation of target search content.
+        self.taskSuccess = taskSuccess ?? (resolvedBudgetCompliance && toolExecutionSuccess && targetPreserved)
     }
 
     /// Serializes event into human-readable JSON.

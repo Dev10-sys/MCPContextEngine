@@ -913,6 +913,33 @@
       navigator.clipboard.writeText(text);
       alert('Telemetry JSON copied to clipboard.');
     }
+
+    // Real-Time Live Telemetry Poller
+    async function pollTelemetry() {
+      try {
+        const resp = await fetch('/api/telemetry', { cache: 'no-store' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data || !data.runId) return;
+
+        const jsonEl = document.getElementById('telemetry-json');
+        if (jsonEl) {
+          jsonEl.innerText = JSON.stringify(data, null, 2);
+        }
+
+        const badge = document.querySelector('.brand-badge');
+        if (badge) {
+          badge.innerText = `● LIVE: ${data.runId.slice(0, 16)}`;
+          badge.style.color = '#3fb950';
+          badge.style.borderColor = 'rgba(63, 185, 80, 0.4)';
+        }
+      } catch (err) {
+        // Fallback gracefully when running statically or offline
+      }
+    }
+
+    setInterval(pollTelemetry, 3000);
+    pollTelemetry();
   </script>
 
 </body>

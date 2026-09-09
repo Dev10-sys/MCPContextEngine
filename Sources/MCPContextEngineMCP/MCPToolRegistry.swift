@@ -63,6 +63,16 @@ public actor MCPToolRegistry {
         Array(registeredTools.values).sorted { $0.id < $1.id }
     }
 
+    /// Returns all registered tool descriptors sharing the given bare tool name across all servers.
+    public func tools(named name: String) -> [MCPToolDescriptor] {
+        registeredTools.values.filter { $0.name == name }.sorted { $0.id < $1.id }
+    }
+
+    /// Checks if a bare tool name is provided by more than one registered MCP server.
+    public func isAmbiguous(toolName: String) -> Bool {
+        tools(named: toolName).count > 1
+    }
+
     /// Retrieves the client associated with a given tool's fully-qualified ID.
     public func client(forToolId id: String) -> MCPClientProtocol? {
         guard let tool = registeredTools[id] else { return nil }

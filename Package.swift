@@ -45,7 +45,8 @@ let package = Package(
         .target(
             name: "MCPContextEngineFoundationModels",
             dependencies: [
-                "MCPContextEngineCore"
+                "MCPContextEngineCore",
+                "MCPContextEngineMCP"
             ],
             path: "Sources/MCPContextEngineFoundationModels"
         ),
@@ -75,7 +76,8 @@ let package = Package(
             name: "MCPContextEngineFoundationModelsTests",
             dependencies: [
                 "MCPContextEngineFoundationModels",
-                "MCPContextEngineCore"
+                "MCPContextEngineCore",
+                "MCPContextEngineMCP"
             ],
             path: "Tests/MCPContextEngineFoundationModelsTests"
         ),
