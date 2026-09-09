@@ -41,9 +41,15 @@ public struct FoundationModelsAdapter: Sendable {
         executor: MCPToolExecutor,
         approvedTools: Set<String>? = nil
     ) -> AppleMCPTool {
+        #if canImport(FoundationModels)
+        AppleMCPTool(descriptor: descriptor) { dynamicArgs in
+            try await executor.execute(descriptor: descriptor, arguments: dynamicArgs.asDictionary(), approvedTools: approvedTools)
+        }
+        #else
         AppleMCPTool(descriptor: descriptor) { args in
             try await executor.execute(descriptor: descriptor, arguments: args, approvedTools: approvedTools)
         }
+        #endif
     }
 
     /// Bridges multiple MCP descriptors into `AppleMCPTool` instances.

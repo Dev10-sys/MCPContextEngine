@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Dev10-sys/MCPContextEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/Dev10-sys/MCPContextEngine/actions/workflows/ci.yml)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Platforms](https://img.shields.io/badge/Platforms-macOS%2014%2B%20%7C%20iOS%2017%2B%20%7C%20Linux-blue.svg)](https://apple.com)
+[![Platforms](https://img.shields.io/badge/Platforms-macOS%2015%2B%20%7C%20iOS%2018%2B%20%7C%20Linux-blue.svg)](https://apple.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 A high-performance runtime middleware layer for Swift that bridges **Model Context Protocol (MCP)** servers with **Apple Foundation Models** and LLM runtimes. It performs application-side, task-aware context orchestration: routing relevant tools from large multi-server catalogs, tracking live context headroom, compacting oversized payloads with strict mathematical token guarantees, and streaming real-time telemetry to developer dashboards.
@@ -159,9 +159,21 @@ Sources/
 
 ## Apple Platform & Foundation Models Integration Layer
 
-- **Native Token Counting & Context Introspection**: When compiled with Apple's `FoundationModels` framework available, `FoundationModelsTokenProvider` leverages `SystemLanguageModel.default.contextSize` and `SystemLanguageModel.default.tokenCount(for:)`.
-- **Linguistic & Calibrated Estimators**: When `FoundationModels` is unavailable (Linux, Windows, or earlier macOS), token counting uses an Apple-platform linguistic estimator (`NLTokenizer`) scaled for technical text, and a calibrated cross-platform BPE estimator (~4 chars/token).
-- **Native Apple Tool Conformance**: Under `#if canImport(FoundationModels)`, `AppleMCPTool` conforms directly to Apple's `Tool` protocol (`call(arguments:)`), bridging MCP tool schemas into Apple Intelligence sessions. Across all platforms, `MCPExecutableToolBridge` (`FoundationModelExecutableTool`) provides a unified executable contract with automated context reduction.
+- **Native Tool Conformance**: Under `#if canImport(FoundationModels)`, `AppleMCPTool` conforms directly to Apple's `FoundationModels.Tool` protocol with a typed dynamic `Arguments` container (`Codable`, `Sendable`), parameter dictionary conversion, and the framework's `call(arguments:)` contract for execution inside `LanguageModelSession`. Across all platforms, `MCPExecutableToolBridge` (`FoundationModelExecutableTool`) provides a unified executable contract with automated context reduction.
+- **Dynamic Schema Generation**: Bridges MCP tool schemas into Apple's `DynamicGenerationSchema` and `GenerationSchema` at runtime, enabling Apple Intelligence models to reason over dynamically discovered MCP tool signatures without hardcoded compile-time Swift schemas.
+- **Native Token Counting & Context Introspection**: Exposes `nativeTokenCount(for:)` and `nativeContextSize()` that query `SystemLanguageModel.default.tokenCount(for:)` and `SystemLanguageModel.default.contextSize` when running on supported Apple Intelligence hardware runtimes.
+- **Linguistic & Calibrated Estimators**: When `FoundationModels` is unavailable (Linux, Windows, or earlier macOS), token counting gracefully falls back to an Apple-platform linguistic estimator (`NLTokenizer`) scaled for technical text, and a calibrated cross-platform BPE estimator (~4 chars/token).
+
+---
+
+## Architecture & Demonstration Transports
+
+The interactive demonstration (`MCPContextEngineDemo`) exercises the full operational middleware pipeline:
+```
+MCP Tool Registry  ──▶  Tool Router  ──▶  MCPToolExecutor  ──▶  Result Reducer  ──▶  Apple Tool Bridge  ──▶  Telemetry
+```
+- **Showcase Demo**: Employs an in-memory MCP client registered with actual GitHub REST API live data (`swiftlang/swift` issues and concurrency diagnostics) to demonstrate end-to-end multi-criteria tool ranking, strict token budget preservation, and structured JSON reduction.
+- **Production Stdio Transport**: Production deployments use `StdioMCPClientAdapter`, powered by the official Apple / Anthropic `ModelContextProtocol` Swift SDK over standard I/O child process pipes (validated in CI against the live `@modelcontextprotocol/server-everything` test harness).
 
 ---
 
@@ -199,7 +211,7 @@ The console automatically receives and visualizes live telemetry events:
 swift build
 ```
 
-### Run Full Test Suite (29+ Unit & Benchmark Tests)
+### Run Full Test Suite (34 tests)
 ```bash
 swift test
 ```
@@ -224,7 +236,7 @@ swift run MCPContextEngineDemo
 ## Continuous Integration
 
 Every commit is verified across Darwin and Linux environments via GitHub Actions:
-- **macOS (Apple Silicon M-series)**: `macos-14` with Xcode 15/16 and Swift 6
+- **macOS (Apple Silicon)**: `macos-15` with Apple Swift 6 / Xcode 16
 - **Ubuntu Linux**: `ubuntu-latest` with Swift 6.0 and Node.js 20
 
 ---

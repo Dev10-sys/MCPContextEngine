@@ -74,4 +74,51 @@ final class FoundationModelsAdapterTests: XCTestCase {
         )
         XCTAssertLessThanOrEqual(reductionResult.reducedTokens, 100)
     }
+
+    func testAppleMCPToolDynamicArgumentsAndExecution() async throws {
+        let descriptor = MCPToolDescriptor(
+            name: "test_dynamic_tool",
+            description: "Test dynamic tool execution",
+            inputSchema: ToolInputSchema(
+                type: "object",
+                properties: [
+                    "action": .init(type: "string", description: "Action to take"),
+                    "count": .init(type: "number", description: "Count parameter")
+                ],
+                required: ["action"]
+            ),
+            serverId: "test_server"
+        )
+
+        let appleTool = AppleMCPTool(descriptor: descriptor) { (args: [String: Any]) in
+            let action = args["action"] as? String ?? "unknown"
+            let count = args["count"] as? String ?? "0"
+            return "Executed \(action) with count \(count)"
+        }
+
+        XCTAssertEqual(appleTool.name, "test_dynamic_tool")
+        XCTAssertEqual(appleTool.description, "Test dynamic tool execution")
+
+        // Test with dictionary call
+        let result1 = try await appleTool.call(arguments: ["action": "analyze", "count": "42"])
+        XCTAssertEqual(result1, "Executed analyze with count 42")
+
+        // Test with typed dynamic Arguments call
+        let typedArgs = AppleMCPTool.Arguments(dictionary: ["action": "compact", "count": "10"])
+        XCTAssertEqual(typedArgs["action"], "compact")
+        XCTAssertEqual(typedArgs["count"], "10")
+        let result2 = try await appleTool.call(arguments: typedArgs)
+        XCTAssertEqual(result2, "Executed compact with count 10")
+    }
+
+    func testNativeTokenCountAndContextSizeFallback() async throws {
+        let provider = FoundationModelsTokenProvider()
+        let sampleText = "The quick brown fox jumps over the lazy dog. Swift 6 on Apple Silicon."
+
+        let tokenCount = try await provider.nativeTokenCount(for: sampleText)
+        XCTAssertGreaterThan(tokenCount, 5)
+
+        let contextSize = try await FoundationModelsTokenProvider.nativeContextSize()
+        XCTAssertGreaterThanOrEqual(contextSize, 4096)
+    }
 }

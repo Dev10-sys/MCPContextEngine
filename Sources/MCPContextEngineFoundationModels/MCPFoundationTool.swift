@@ -59,13 +59,145 @@ public struct MCPFoundationTool: MCPExecutableToolBridge, Sendable {
     }
 }
 
-/// Dedicated bridge representing an Apple Foundation Models tool specification backed by an MCPToolDescriptor.
-/// Implements the standard `call(arguments:)` contract for Apple Intelligence function calling workflows.
+#if canImport(FoundationModels)
+import FoundationModels
+
+/// Native Apple Foundation Models Tool implementation backed by an MCPToolDescriptor.
+/// Conforms directly to Apple's `FoundationModels.Tool` protocol, supporting dynamic
+/// typed arguments and async execution within `LanguageModelSession`.
+public struct AppleMCPTool: Tool, Sendable {
+    public typealias Output = String
+
+    public let name: String
+    public let description: String
+    public let descriptor: MCPToolDescriptor
+    public let executeHandler: @Sendable (Arguments) async throws -> String
+
+    /// Dynamic typed argument model representing runtime parameters inferred by the Foundation Model.
+    public struct Arguments: Codable, Sendable {
+        public var parameters: [String: String]
+
+        public init(parameters: [String: String] = [:]) {
+            self.parameters = parameters
+        }
+
+        public init(dictionary: [String: Any]) {
+            var map: [String: String] = [:]
+            for (key, value) in dictionary {
+                map[key] = String(describing: value)
+            }
+            self.parameters = map
+        }
+
+        public func asDictionary() -> [String: Any] {
+            var dict: [String: Any] = [:]
+            for (k, v) in parameters {
+                dict[k] = v
+            }
+            return dict
+        }
+
+        public subscript(key: String) -> String? {
+            parameters[key]
+        }
+    }
+
+    public init(
+        descriptor: MCPToolDescriptor,
+        executeHandler: @escaping @Sendable (Arguments) async throws -> String
+    ) {
+        self.name = descriptor.name
+        self.description = descriptor.description ?? ""
+        self.descriptor = descriptor
+        self.executeHandler = executeHandler
+    }
+
+    public init(
+        descriptor: MCPToolDescriptor,
+        executeHandler: @escaping @Sendable ([String: Any]) async throws -> String
+    ) {
+        self.name = descriptor.name
+        self.description = descriptor.description ?? ""
+        self.descriptor = descriptor
+        self.executeHandler = { args in
+            try await executeHandler(args.asDictionary())
+        }
+    }
+
+    public func call(arguments: Arguments) async throws -> String {
+        try await executeHandler(arguments)
+    }
+
+    public func call(arguments: [String: Any]) async throws -> String {
+        try await executeHandler(Arguments(dictionary: arguments))
+    }
+}
+
+@available(macOS 15.0, iOS 18.0, *)
+extension MCPToolDescriptor {
+    /// Constructs a FoundationModels `DynamicGenerationSchema` representing the MCP input schema.
+    public func asDynamicGenerationSchema() -> DynamicGenerationSchema {
+        var properties: [DynamicGenerationSchema.Property] = []
+        for (propName, propSchema) in inputSchema.properties {
+            let schemaType: DynamicGenerationSchema
+            switch propSchema.type.lowercased() {
+            case "number", "integer":
+                schemaType = DynamicGenerationSchema(type: Double.self)
+            case "boolean":
+                schemaType = DynamicGenerationSchema(type: Bool.self)
+            default:
+                schemaType = DynamicGenerationSchema(type: String.self)
+            }
+            properties.append(DynamicGenerationSchema.Property(name: propName, schema: schemaType))
+        }
+        return DynamicGenerationSchema(
+            name: "\(name)_Parameters",
+            properties: properties
+        )
+    }
+
+    /// Constructs a FoundationModels `GenerationSchema` container for tool-calling integration.
+    public func asGenerationSchema() -> GenerationSchema {
+        GenerationSchema(root: asDynamicGenerationSchema(), dependencies: [])
+    }
+}
+#else
+/// Cross-platform representation of an Apple Foundation Models tool specification backed by an MCPToolDescriptor.
+/// Implements the standard `call(arguments:)` contract for model function calling workflows.
 public struct AppleMCPTool: Sendable {
     public let name: String
     public let description: String
     public let descriptor: MCPToolDescriptor
     public let executeHandler: @Sendable ([String: Any]) async throws -> String
+
+    /// Dynamic typed argument container matching the Foundation Models argument contract.
+    public struct Arguments: Codable, Sendable {
+        public var parameters: [String: String]
+
+        public init(parameters: [String: String] = [:]) {
+            self.parameters = parameters
+        }
+
+        public init(dictionary: [String: Any]) {
+            var map: [String: String] = [:]
+            for (key, value) in dictionary {
+                map[key] = String(describing: value)
+            }
+            self.parameters = map
+        }
+
+        public func asDictionary() -> [String: Any] {
+            var dict: [String: Any] = [:]
+            for (k, v) in parameters {
+                dict[k] = v
+            }
+            return dict
+        }
+
+        public subscript(key: String) -> String? {
+            parameters[key]
+        }
+    }
 
     public init(
         descriptor: MCPToolDescriptor,
@@ -77,7 +209,24 @@ public struct AppleMCPTool: Sendable {
         self.executeHandler = executeHandler
     }
 
+    public init(
+        descriptor: MCPToolDescriptor,
+        executeHandler: @escaping @Sendable (Arguments) async throws -> String
+    ) {
+        self.name = descriptor.name
+        self.description = descriptor.description ?? ""
+        self.descriptor = descriptor
+        self.executeHandler = { dict in
+            try await executeHandler(Arguments(dictionary: dict))
+        }
+    }
+
     public func call(arguments: [String: Any]) async throws -> String {
         try await executeHandler(arguments)
     }
+
+    public func call(arguments: Arguments) async throws -> String {
+        try await executeHandler(arguments.asDictionary())
+    }
 }
+#endif
