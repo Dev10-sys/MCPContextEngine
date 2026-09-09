@@ -6,9 +6,9 @@
   "overflow" : false,
   "rawResultTokens" : 22034,
   "reducedResultTokens" : 1600,
-  "reductionLatencyMs" : 42.030006,
-  "routingLatencyMs" : 18.41682,
-  "runId" : "demo-run-1788961451",
+  "reductionLatencyMs" : 50.60367,
+  "routingLatencyMs" : 14.196257,
+  "runId" : "demo-run-1788969039",
   "selectedTools" : [
     "github_search_issues",
     "github_add_labels_to_issue",
@@ -17,8 +17,8 @@
   ],
   "targetPreserved" : true,
   "taskSuccess" : true,
-  "timestamp" : "2026-09-09T13:44:11Z",
+  "timestamp" : "2026-09-09T15:50:39Z",
   "toolExecutionSuccess" : true,
-  "totalLatencyMs" : 60.446826,
+  "totalLatencyMs" : 64.799927,
   "userQuery" : "Find open Swift concurrency issues related to our project and tell me which ones are probably relevant."
 }
