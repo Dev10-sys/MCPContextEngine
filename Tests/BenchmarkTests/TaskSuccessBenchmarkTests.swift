@@ -55,7 +55,7 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
                 id: "scenario-6-pr-review",
                 taskQuery: "List pull requests open for review on main branch",
                 targetKeyword: "review",
-                expectedToolName: "github_search_issues",
+                expectedToolName: "github_list_pull_requests",
                 rawPayload: "{\"pull_requests\": [{\"number\": 404, \"title\": \"Fix review comments\", \"diff\": \"\(String(repeating: "+ line added to code ", count: 120))\"}]}"
             ),
             BenchmarkScenario(
@@ -69,7 +69,7 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
                 id: "scenario-8-release-notes",
                 taskQuery: "Generate changelog release notes for version 2.0 tag",
                 targetKeyword: "release",
-                expectedToolName: "github_search_issues",
+                expectedToolName: "github_create_release",
                 rawPayload: "{\"releases\": [{\"tag\": \"v2.0.0\", \"notes\": \"\(String(repeating: "Major release feature updates notes ", count: 140))\"}]}"
             ),
             BenchmarkScenario(
@@ -147,6 +147,10 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
             }
 
             // Invariant assertions per scenario
+            XCTAssertTrue(
+                result.selectedTools.contains(where: { $0.name == scenario.expectedToolName }),
+                "Router must select expected tool '\(scenario.expectedToolName)' for \(scenario.id)"
+            )
             XCTAssertTrue(result.fitsBudget, "Engine execution must never exceed budget in \(scenario.id)")
             XCTAssertTrue(result.contextFitSuccess)
             XCTAssertTrue(result.targetPreserved, "Target keyword '\(scenario.targetKeyword)' must be preserved in reduced output")

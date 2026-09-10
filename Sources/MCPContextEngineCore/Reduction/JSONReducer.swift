@@ -99,7 +99,12 @@ public struct JSONReducer: Sendable {
 
     // MARK: - Recursive Transformation
 
-    private func transform(jsonObject: Any, currentOptions: Options, strategies: inout [String]) -> Any {
+    private func transform(
+        jsonObject: Any,
+        currentOptions: Options,
+        strategies: inout [String],
+        keyName: String? = nil
+    ) -> Any {
         if let dict = jsonObject as? [String: Any] {
             var result: [String: Any] = [:]
             for (key, value) in dict {
@@ -125,8 +130,20 @@ public struct JSONReducer: Sendable {
                     }
                 }
 
-                // Transform child
-                let transformedChild = transform(jsonObject: value, currentOptions: currentOptions, strategies: &strategies)
+                // Under aggressive compaction steps, actively preserve prioritizedKeys
+                // while pruning extraneous non-prioritized metadata keys
+                if currentOptions.maxArrayItems <= 4 && dict.count > 6 {
+                    let isPrioritized = currentOptions.prioritizedKeys.contains(key.lowercased())
+                    if !isPrioritized {
+                        if !strategies.contains("preserve_prioritized_keys") {
+                            strategies.append("preserve_prioritized_keys")
+                        }
+                        continue
+                    }
+                }
+
+                // Transform child with parent key context
+                let transformedChild = transform(jsonObject: value, currentOptions: currentOptions, strategies: &strategies, keyName: key)
                 result[key] = transformedChild
             }
             return result
@@ -134,10 +151,23 @@ public struct JSONReducer: Sendable {
             let total = array.count
             if total > currentOptions.maxArrayItems {
                 if !strategies.contains("cap_array_length") { strategies.append("cap_array_length") }
-                let slice = array.prefix(currentOptions.maxArrayItems)
+
+                // When capping arrays of dictionaries, prioritize entries containing key identification fields
+                let candidateSlice: [Any]
+                if let dictArray = array as? [[String: Any]] {
+                    let sorted = dictArray.sorted { a, b in
+                        let aCount = a.keys.filter { currentOptions.prioritizedKeys.contains($0.lowercased()) }.count
+                        let bCount = b.keys.filter { currentOptions.prioritizedKeys.contains($0.lowercased()) }.count
+                        return aCount > bCount
+                    }
+                    candidateSlice = Array(sorted.prefix(currentOptions.maxArrayItems))
+                } else {
+                    candidateSlice = Array(array.prefix(currentOptions.maxArrayItems))
+                }
+
                 var transformedSlice: [Any] = []
-                for item in slice {
-                    transformedSlice.append(transform(jsonObject: item, currentOptions: currentOptions, strategies: &strategies))
+                for item in candidateSlice {
+                    transformedSlice.append(transform(jsonObject: item, currentOptions: currentOptions, strategies: &strategies, keyName: keyName))
                 }
                 // Append informative metadata
                 let metaNotice: [String: Any] = [
@@ -147,13 +177,15 @@ public struct JSONReducer: Sendable {
                 transformedSlice.append(metaNotice)
                 return transformedSlice
             } else {
-                return array.map { transform(jsonObject: $0, currentOptions: currentOptions, strategies: &strategies) }
+                return array.map { transform(jsonObject: $0, currentOptions: currentOptions, strategies: &strategies, keyName: keyName) }
             }
         } else if let string = jsonObject as? String {
-            if string.count > currentOptions.maxStringLength {
+            let isPrioritized = keyName.map { currentOptions.prioritizedKeys.contains($0.lowercased()) } ?? false
+            let maxLen = isPrioritized ? max(currentOptions.maxStringLength * 2, 500) : currentOptions.maxStringLength
+            if string.count > maxLen {
                 if !strategies.contains("truncate_strings") { strategies.append("truncate_strings") }
-                let allowed = string.prefix(currentOptions.maxStringLength)
-                let omitted = string.count - currentOptions.maxStringLength
+                let allowed = string.prefix(maxLen)
+                let omitted = string.count - maxLen
                 return "\(allowed)... [truncated: \(omitted) characters omitted]"
             }
             return string

@@ -59,9 +59,8 @@ final class LiveEverythingServerTests: XCTestCase {
         XCTAssertGreaterThan(routing.selectedTools.count, 0, "ToolRouter should select tools for echo task")
 
         // Execute echo tool directly over official MCP stdio transport
-        if tools.contains(where: { $0.name == "echo" }) {
-            let echoResult = try await client.callTool(name: "echo", arguments: ["message": "test_hello"])
-            XCTAssertTrue(echoResult.contains("test_hello") || !echoResult.isEmpty, "Echo tool result should reflect input message")
-        }
+        XCTAssertTrue(tools.contains(where: { $0.name == "echo" }), "Live Everything server must expose the 'echo' tool")
+        let echoResult = try await client.callTool(name: "echo", arguments: ["message": "test_hello"])
+        XCTAssertTrue(echoResult.contains("test_hello"), "Echo tool result must strictly contain input test_hello payload")
     }
 }

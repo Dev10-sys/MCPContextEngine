@@ -12,14 +12,14 @@ MCPContextEngine operates as middleware between Model Context Protocol (MCP) ser
 
 ### Core Security Invariants
 
-1. **Strict Tool Execution Boundary**
-   Only tools explicitly approved in the execution allowlist (e.g., as determined by the `ToolRouter` or configured by the caller) can be executed. Attempts to execute unauthorized or unapproved tools throw `ExecutionSecurityError.unauthorizedTool`. Ambiguous tool name resolutions across multiple registered servers throw `ExecutionSecurityError.ambiguousTool`.
+1. **Configurable Tool Execution Boundary**
+   When an execution allowlist is supplied (`approvedTools`), `MCPToolExecutor` strictly enforces it. Any attempt to execute an unapproved tool throws `ExecutionSecurityError.unauthorizedTool`. In multi-server environments, ambiguous tool name resolutions across multiple registered servers throw `ExecutionSecurityError.ambiguousTool`, requiring callers to specify the exact fully-qualified identifier (`serverId:name`).
 
 2. **Prompt Injection & Delimiter Sanitization**
    MCP results are strictly handled as data payloads (`role: .tool`), never injected directly into system instruction prompts. Special model delimiter sequences (such as `<|im_start|>`, `<|system|>`, `[SYSTEM DIRECTIVE]`, and `<<SYS>>`) are sanitized by `MCPResultConverter` to mitigate delimiter collision and control flow hijack via tool outputs.
 
 3. **Model Context Overflow Defense**
-   Untrusted or verbose MCP tools returning large payloads (megabytes of JSON/text) are prevented from overflowing model context windows through deterministic character and token ceilings, array truncations, and multi-pass structural reduction in `ResultReducer`.
+   Untrusted or verbose MCP tools returning large payloads are prevented from overflowing model context windows through deterministic character and token ceilings, array truncations, and multi-pass structural reduction in `ResultReducer`. Note: The engine guarantees downstream model context headroom; callers handling multi-megabyte payloads in process memory should configure transport-level streaming or message size limits if host RAM is constrained.
 
 4. **Auditability & Attribution**
    Reduced results maintain references to their raw inputs, reduction strategy applied, original vs. reduced token counts, and tool source attribution in `ReductionResult` and execution telemetry.

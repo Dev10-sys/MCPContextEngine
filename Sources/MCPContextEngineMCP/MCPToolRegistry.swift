@@ -16,8 +16,27 @@ public actor MCPToolRegistry {
     public init() {}
 
     /// Registers an MCP server client with the registry.
+    /// If a client with the same serverId already exists, any previously registered tools
+    /// for that server are purged to maintain catalog consistency.
     public func registerServer(_ client: MCPClientProtocol) {
+        if let previousToolIds = serverToolIndex[client.serverId] {
+            for toolId in previousToolIds {
+                registeredTools.removeValue(forKey: toolId)
+            }
+            serverToolIndex.removeValue(forKey: client.serverId)
+        }
         clients[client.serverId] = client
+    }
+
+    /// Unregisters an MCP server and removes all tools registered under its namespace.
+    public func unregisterServer(serverId: String) {
+        if let previousToolIds = serverToolIndex[serverId] {
+            for toolId in previousToolIds {
+                registeredTools.removeValue(forKey: toolId)
+            }
+            serverToolIndex.removeValue(forKey: serverId)
+        }
+        clients.removeValue(forKey: serverId)
     }
 
     /// Convenience alias for registering an MCP server client.
@@ -26,6 +45,7 @@ public actor MCPToolRegistry {
     }
 
     /// Connects to all registered MCP servers and discovers available tools concurrently.
+    /// Cleans up any tools that disappeared from servers since the previous discovery.
     public func discoverAllTools() async throws -> [MCPToolDescriptor] {
         var allDiscovered: [MCPToolDescriptor] = []
 
@@ -39,17 +59,46 @@ public actor MCPToolRegistry {
             }
 
             for try await (serverId, tools) in group {
-                var toolIds: Set<String> = []
+                let previousToolIds = serverToolIndex[serverId] ?? []
+                var newToolIds: Set<String> = []
+
                 for tool in tools {
                     registeredTools[tool.id] = tool
-                    toolIds.insert(tool.id)
+                    newToolIds.insert(tool.id)
                     allDiscovered.append(tool)
                 }
-                serverToolIndex[serverId] = toolIds
+
+                // Clean up stale tools that disappeared from this server on rediscovery
+                let staleToolIds = previousToolIds.subtracting(newToolIds)
+                for staleId in staleToolIds {
+                    registeredTools.removeValue(forKey: staleId)
+                }
+
+                serverToolIndex[serverId] = newToolIds
             }
         }
 
         return allDiscovered
+    }
+
+    /// Discovers tools for a specific registered server, cleaning up any disappeared tools.
+    public func discoverTools(forServer serverId: String) async throws -> [MCPToolDescriptor] {
+        guard let client = clients[serverId] else { return [] }
+        try await client.connect()
+        let tools = try await client.listTools()
+
+        let previousToolIds = serverToolIndex[serverId] ?? []
+        var newToolIds: Set<String> = []
+        for tool in tools {
+            registeredTools[tool.id] = tool
+            newToolIds.insert(tool.id)
+        }
+        let staleToolIds = previousToolIds.subtracting(newToolIds)
+        for staleId in staleToolIds {
+            registeredTools.removeValue(forKey: staleId)
+        }
+        serverToolIndex[serverId] = newToolIds
+        return tools
     }
 
     /// Looks up a registered tool descriptor by fully-qualified ID ("serverId:name").

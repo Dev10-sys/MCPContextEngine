@@ -145,7 +145,7 @@ let engineTotal = budget.systemPromptTokens + budget.historyTokens + budget.tool
 
 let baselineOverflow = baselineTotal > budget.totalCapacity
 let engineOverflow = engineTotal > budget.totalCapacity
-let targetPreserved = reductionResult.reducedData.contains("92004") || !reductionResult.reducedData.isEmpty
+let targetPreserved = reductionResult.reducedData.contains("92004")
 let engineSuccess = (!engineOverflow) && targetPreserved
 let baselineSuccess = !baselineOverflow
 

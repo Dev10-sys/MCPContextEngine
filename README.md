@@ -48,7 +48,7 @@ When a selected tool executes and returns raw JSON — repository issue searches
 **MCPContextEngine provides four architectural guarantees:**
 
 1. **Intelligent Tool Routing**: Deterministic multi-criteria scoring across name tokenization, description matching, query keyword extraction, and schema parameter relevance — selecting only top-K relevant tools.
-2. **Context Headroom Accounting**: Introspects model context window capacity (4,096 on-device ANE vs. 32,768 Private Cloud Compute) and reserves token budgets for system prompts, history, and response buffers.
+2. **Context Headroom Accounting**: Supports configurable context window capacity profiles (4,096 on-device ANE default vs. 32,768 Private Cloud Compute profile via `APPLE_INTELLIGENCE_PCC=1`) and reserves token budgets for system prompts, history, and response buffers.
 3. **Strict Guaranteed Reducer Invariant**: Structural pruning (nulls, empty collections, oversized strings, array pagination) coupled with a deterministic hard ceiling safety net guaranteeing that `reducedTokens <= availableBudgetTokens` holds relative to the configured TokenProvider across 100% of executions.
 4. **Truthful Telemetry & Observability**: Emits structured runtime events recording exact token metrics, overflow status, latency overheads, target entity preservation, and task success rates for real-time visualization.
 
@@ -56,7 +56,7 @@ When a selected tool executes and returns raw JSON — repository issue searches
 
 ## Benchmark Results
 
-The benchmark suite compares naive MCP execution (exposing all discovered schemas and unmodified tool payloads) against **MCPContextEngine** across 10 distinct developer tasks and live GitHub API queries (`swiftlang/swift` concurrency issues).
+The benchmark suite evaluates naive MCP execution (exposing all discovered schemas and unmodified tool payloads) against **MCPContextEngine** across 10 deterministic developer scenarios (with representative payloads including Swift concurrency issue searches, database queries, release notes, and diagnostics). Live GitHub REST API querying is demonstrated in the interactive CLI demo (`MCPContextEngineDemo`).
 
 All metrics are programmatically measured and verified in `Tests/BenchmarkTests/TaskSuccessBenchmarkTests.swift`.
 
@@ -93,19 +93,19 @@ Total engine overhead: ~53 ms
 
 ### Reproducible Multi-Scenario Benchmark Suite
 
-| Scenario ID | Task Query | Baseline Overflow | Engine Budget Compliant | Target Preserved | Context-Fit Success |
-|---|---|:---:|:---:|:---:|:---:|
-| `scenario-1-concurrency` | Find open Swift concurrency data race issues | ❌ Overflow (+20K) | ✅ FITS | ✅ YES (#92004) | 100% |
-| `scenario-2-memory-leak` | Search memory leak in async stream actor buffer | ❌ Overflow (+18K) | ✅ FITS | ✅ YES (#92010) | 100% |
-| `scenario-3-file-read` | Read filesystem config json from repository root | ❌ Overflow (+12K) | ✅ FITS | ✅ YES (config.json) | 100% |
-| `scenario-4-slack-alert` | Send Slack alert notification message to deploy channel | ❌ Overflow (+8K) | ✅ FITS | ✅ YES (alert msg) | 100% |
-| `scenario-5-db-query` | Query database users table where active equals true | ❌ Overflow (+15K) | ✅ FITS | ✅ YES (user records) | 100% |
-| `scenario-6-pr-review` | List pull requests open for review on main branch | ❌ Overflow (+14K) | ✅ FITS | ✅ YES (PR #404) | 100% |
-| `scenario-7-docker-logs` | Fetch container logs and diagnostic crash trace | ❌ Overflow (+16K) | ✅ FITS | ✅ YES (crash trace) | 100% |
-| `scenario-8-release-notes` | Generate changelog release notes for version 2.0 tag | ❌ Overflow (+11K) | ✅ FITS | ✅ YES (v2.0 notes) | 100% |
-| `scenario-9-auth-token` | Validate authentication token permissions and scope | ❌ Overflow (+9K) | ✅ FITS | ✅ YES (oauth scopes) | 100% |
-| `scenario-10-benchmark-perf` | Measure performance latency and memory footprint | ❌ Overflow (+13K) | ✅ FITS | ✅ YES (latency samples) | 100% |
-| **Aggregate Summary** | **10 Multi-Server Scenarios** | **0% Compliant** | **100% Compliant** | **100% Preserved** | **100% Context Fit** |
+| Scenario ID | Task Query | Baseline Overflow | Engine Budget Compliant | Target Preserved | Expected Tool Selected | Context-Fit Success |
+|---|---|:---:|:---:|:---:|:---:|:---:|
+| `scenario-1-concurrency` | Find open Swift concurrency data race issues | ❌ Overflow (+20K) | ✅ FITS | ✅ YES (#92004) | ✅ `github_search_issues` | 100% |
+| `scenario-2-memory-leak` | Search memory leak in async stream actor buffer | ❌ Overflow (+18K) | ✅ FITS | ✅ YES (#92010) | ✅ `github_search_issues` | 100% |
+| `scenario-3-file-read` | Read filesystem config json from repository root | ❌ Overflow (+12K) | ✅ FITS | ✅ YES (config.json) | ✅ `fs_read_file` | 100% |
+| `scenario-4-slack-alert` | Send Slack alert notification message to deploy channel | ❌ Overflow (+8K) | ✅ FITS | ✅ YES (alert msg) | ✅ `slack_post_message` | 100% |
+| `scenario-5-db-query` | Query database users table where active equals true | ❌ Overflow (+15K) | ✅ FITS | ✅ YES (user records) | ✅ `db_query` | 100% |
+| `scenario-6-pr-review` | List pull requests open for review on main branch | ❌ Overflow (+14K) | ✅ FITS | ✅ YES (PR #404) | ✅ `github_list_pull_requests` | 100% |
+| `scenario-7-docker-logs` | Fetch container logs and diagnostic crash trace | ❌ Overflow (+16K) | ✅ FITS | ✅ YES (crash trace) | ✅ `monitoring_get_logs` | 100% |
+| `scenario-8-release-notes` | Generate changelog release notes for version 2.0 tag | ❌ Overflow (+11K) | ✅ FITS | ✅ YES (v2.0 notes) | ✅ `github_create_release` | 100% |
+| `scenario-9-auth-token` | Validate authentication token permissions and scope | ❌ Overflow (+9K) | ✅ FITS | ✅ YES (oauth scopes) | ✅ `db_verify_token` | 100% |
+| `scenario-10-benchmark-perf` | Measure performance latency and memory footprint | ❌ Overflow (+13K) | ✅ FITS | ✅ YES (latency samples) | ✅ `monitoring_get_metrics` | 100% |
+| **Aggregate Summary** | **10 Multi-Server Scenarios** | **0% Compliant** | **100% Compliant** | **100% Preserved** | **100% Routed** | **100% Context Fit** |
 
 ---
 
@@ -151,7 +151,7 @@ Sources/
 
 ## Security Model
 
-1. **Tool Execution Allowlist**: `MCPToolExecutor` enforces that only tools scored and selected by `ToolRouter` (or approved by the caller) can be dispatched. Unapproved tools are blocked before process execution with `ExecutionSecurityError.unauthorizedTool`.
+1. **Tool Execution Allowlist**: When an execution allowlist is supplied (`approvedTools`), `MCPToolExecutor` strictly enforces that only tools scored and selected by `ToolRouter` (or approved by the caller) can be dispatched. Unapproved tools are blocked before process execution with `ExecutionSecurityError.unauthorizedTool`.
 2. **Prompt Injection Containment**: MCP results are classified as `.tool` data payloads. `MCPResultConverter` neutralizes system instruction delimiter tokens (`<|im_start|>`, `<|system|>`, `[SYSTEM DIRECTIVE]`) to mitigate delimiter collision and control flow hijack attacks via tool outputs.
 3. **Cross-Server Collision Prevention & Disambiguation**: Tools are indexed by fully-qualified identifiers (`serverId:name`). `MCPToolRegistry` provides `tool(byId:)`, `tools(named:)`, and `isAmbiguous(toolName:)`. Attempting to invoke an ambiguous bare name throws `ExecutionSecurityError.ambiguousTool`, requiring callers to specify the exact fully-qualified identifier.
 4. **Immutability of Raw Data**: Reduction is non-destructive. `ReductionResult.originalData` retains the untouched raw server output for auditability, provenance, and incremental retrieval.
@@ -161,8 +161,8 @@ Sources/
 ## Apple Platform & Foundation Models Integration Layer
 
 - **Native Tool Conformance**: Under `#if canImport(FoundationModels)`, `AppleMCPTool` conforms directly to Apple's `FoundationModels.Tool` protocol with a typed dynamic `Arguments` container (`Codable`, `Sendable`), parameter dictionary conversion, and the framework's `call(arguments:)` contract. It provides availability-aware integration with `LanguageModelSession` (executing live on-device on Apple Intelligence-capable runtimes, and verifying protocol/schema conformance in CI). Across all platforms, `MCPExecutableToolBridge` (`FoundationModelExecutableTool`) provides a unified executable contract with automated context reduction.
-- **Dynamic Schema Generation**: Bridges MCP tool schemas into Apple's `DynamicGenerationSchema` and `GenerationSchema` at runtime, preserving exact primitive types (Int, Double, Bool), enum constraints, and array item types to enable Apple Intelligence models to reason over dynamically discovered MCP tool signatures without hardcoded compile-time Swift schemas.
-- **Native Token Counting & Context Introspection**: Exposes `nativeTokenCount(for:)` and `nativeContextSize()` that query `SystemLanguageModel.default.tokenCount(for:)` and `SystemLanguageModel.default.contextSize` when running on supported Apple Intelligence hardware runtimes.
+- **Common-Case MCP JSON Schema Mapping**: Bridges standard MCP tool schemas into Apple's `DynamicGenerationSchema` and `GenerationSchema` at runtime, preserving exact primitive types (Int, Double, Bool), enum constraints, and array item types to enable Apple Intelligence models to reason over dynamically discovered MCP tool signatures without hardcoded compile-time Swift schemas.
+- **Native Token Counting & Context Introspection**: Exposes asynchronous `nativeTokenCount(for:)` and `nativeContextSize()` that query `SystemLanguageModel.default.tokenCount(for:)` and `SystemLanguageModel.default.contextSize` when running on supported Apple Intelligence hardware runtimes. To ensure non-blocking synchronous execution in the default context management loop, the engine operates on the calibrated token estimator.
 - **Linguistic & Calibrated Estimators**: When `FoundationModels` is unavailable (Linux, Windows, or earlier macOS), token counting gracefully falls back to an Apple-platform linguistic estimator (`NLTokenizer`) scaled for technical text, and a calibrated cross-platform BPE estimator (~4 chars/token).
 
 ---

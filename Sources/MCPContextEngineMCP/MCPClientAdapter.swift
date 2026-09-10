@@ -1,6 +1,12 @@
 import Foundation
 import MCPContextEngineCore
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 #if canImport(MCP)
 import MCP
 #if canImport(System)
@@ -10,59 +16,7 @@ import SystemPackage
 #endif
 #endif
 
-/// Protocol defining interactions with an MCP server (tool discovery and execution).
-public protocol MCPClientProtocol: Sendable {
-    var serverId: String { get }
-    func connect() async throws
-    func listTools() async throws -> [MCPToolDescriptor]
-    func callTool(name: String, arguments: [String: Any]) async throws -> String
-}
-
-/// Simulated in-memory MCP client for deterministic testing, benchmarks, and offline operation.
-public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
-    public let serverId: String
-    private var registeredTools: [MCPToolDescriptor]
-    private var toolHandlers: [String: @Sendable ([String: Any]) async throws -> String]
-
-    public init(
-        serverId: String,
-        tools: [MCPToolDescriptor] = [],
-        handlers: [String: @Sendable ([String: Any]) async throws -> String] = [:]
-    ) {
-        self.serverId = serverId
-        self.registeredTools = tools
-        self.toolHandlers = handlers
-    }
-
-    public func connect() async throws {}
-
-    public func listTools() async throws -> [MCPToolDescriptor] {
-        return registeredTools
-    }
-
-    public func addTool(_ tool: MCPToolDescriptor, handler: (@Sendable ([String: Any]) async throws -> String)? = nil) {
-        registeredTools.append(tool)
-        if let handler = handler {
-            toolHandlers[tool.name] = handler
-        }
-    }
-
-    public func callTool(name: String, arguments: [String: Any]) async throws -> String {
-        guard let handler = toolHandlers[name] else {
-            return "{\"status\": \"success\", \"tool\": \"\(name)\", \"result\": \"mock_executed\"}"
-        }
-        return try await handler(arguments)
-    }
-}
-
-#if canImport(MCP)
-#if canImport(Darwin)
-import Darwin
-#elseif canImport(Glibc)
-import Glibc
-#endif
-
-/// Lightweight cross-platform unfair lock safe for use around quick synchronous state reads/writes in async contexts.
+/// Lightweight cross-platform lock safe for use around quick synchronous state reads/writes in async contexts.
 final class ClientStateLock: @unchecked Sendable {
     #if canImport(Darwin)
     private var unfairLock = os_unfair_lock()
@@ -87,8 +41,65 @@ final class ClientStateLock: @unchecked Sendable {
     #endif
 }
 
+/// Protocol defining interactions with an MCP server (tool discovery and execution).
+public protocol MCPClientProtocol: Sendable {
+    var serverId: String { get }
+    func connect() async throws
+    func listTools() async throws -> [MCPToolDescriptor]
+    func callTool(name: String, arguments: [String: Any]) async throws -> String
+}
+
+/// Simulated in-memory MCP client for deterministic testing, benchmarks, and offline operation.
+public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
+    public let serverId: String
+    private var registeredTools: [MCPToolDescriptor]
+    private var toolHandlers: [String: @Sendable ([String: Any]) async throws -> String]
+    private let stateLock = ClientStateLock()
+
+    public init(
+        serverId: String,
+        tools: [MCPToolDescriptor] = [],
+        handlers: [String: @Sendable ([String: Any]) async throws -> String] = [:]
+    ) {
+        self.serverId = serverId
+        self.registeredTools = tools
+        self.toolHandlers = handlers
+    }
+
+    public func connect() async throws {}
+
+    public func listTools() async throws -> [MCPToolDescriptor] {
+        stateLock.withLock { registeredTools }
+    }
+
+    public func addTool(_ tool: MCPToolDescriptor, handler: (@Sendable ([String: Any]) async throws -> String)? = nil) {
+        stateLock.withLock {
+            registeredTools.append(tool)
+            if let handler = handler {
+                toolHandlers[tool.name] = handler
+            }
+        }
+    }
+
+    public func callTool(name: String, arguments: [String: Any]) async throws -> String {
+        let handler = stateLock.withLock { toolHandlers[name] }
+        guard let handler = handler else {
+            return "{\"status\": \"success\", \"tool\": \"\(name)\", \"result\": \"mock_executed\"}"
+        }
+        return try await handler(arguments)
+    }
+}
+
+#if canImport(MCP)
 /// Production MCP client adapter bridging to the official Model Context Protocol Swift SDK (`MCP.Client`).
 public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable {
+    public enum ConnectionLifecycle: Sendable {
+        case disconnected
+        case connecting
+        case connected
+        case disconnecting
+    }
+
     public let serverId: String
     public let command: String
     public let arguments: [String]
@@ -96,7 +107,7 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
 
     private var client: MCP.Client?
     private var process: Process?
-    private var isConnected = false
+    private var lifecycle: ConnectionLifecycle = .disconnected
     private let stateLock = ClientStateLock()
 
     public init(
@@ -112,8 +123,33 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     public func connect() async throws {
-        let alreadyConnected = stateLock.withLock { isConnected }
-        if alreadyConnected { return }
+        let shouldInitiate: Bool = stateLock.withLock {
+            switch lifecycle {
+            case .connected:
+                return false
+            case .connecting:
+                return false
+            case .disconnected, .disconnecting:
+                lifecycle = .connecting
+                return true
+            }
+        }
+
+        if !shouldInitiate {
+            // Await active connection in flight without duplicate child process spawning
+            for _ in 0..<100 {
+                let state = stateLock.withLock { lifecycle }
+                switch state {
+                case .connected:
+                    return
+                case .connecting:
+                    try await Task.sleep(nanoseconds: 50_000_000)
+                case .disconnected, .disconnecting:
+                    throw MCPClientError.notConnected
+                }
+            }
+            throw MCPClientError.executionFailed("Timeout waiting for concurrent connect to complete")
+        }
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: command)
@@ -133,7 +169,14 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
         proc.standardOutput = outputPipe
         proc.standardError = errorPipe
 
-        try proc.run()
+        do {
+            try proc.run()
+        } catch {
+            stateLock.withLock {
+                self.lifecycle = .disconnected
+            }
+            throw error
+        }
 
         stateLock.withLock {
             self.process = proc
@@ -151,20 +194,35 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
         )
         #endif
         let mcpClient = MCP.Client(name: "MCPContextEngine", version: "1.0.0")
-        try await mcpClient.connect(transport: transport)
+
+        do {
+            try await mcpClient.connect(transport: transport)
+        } catch {
+            // Handshake failed: Ensure child process is terminated immediately to prevent orphan leak
+            stateLock.withLock {
+                self.client = nil
+                self.process = nil
+                self.lifecycle = .disconnected
+            }
+            if proc.isRunning {
+                proc.terminate()
+            }
+            throw error
+        }
 
         stateLock.withLock {
             self.client = mcpClient
-            self.isConnected = true
+            self.lifecycle = .connected
         }
     }
 
     public func disconnect() {
         let procToTerminate: Process? = stateLock.withLock {
+            self.lifecycle = .disconnecting
             let proc = self.process
             self.client = nil
             self.process = nil
-            self.isConnected = false
+            self.lifecycle = .disconnected
             return proc
         }
         if let proc = procToTerminate, proc.isRunning {
@@ -173,11 +231,11 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     public func listTools() async throws -> [MCPToolDescriptor] {
-        let (activeClient, connected) = stateLock.withLock {
-            (self.client, self.isConnected)
+        let (activeClient, isConnected) = stateLock.withLock {
+            (self.client, self.lifecycle == .connected)
         }
 
-        guard let client = activeClient, connected else {
+        guard let client = activeClient, isConnected else {
             throw MCPClientError.notConnected
         }
 
@@ -242,11 +300,11 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     public func callTool(name: String, arguments: [String: Any]) async throws -> String {
-        let (activeClient, connected) = stateLock.withLock {
-            (self.client, self.isConnected)
+        let (activeClient, isConnected) = stateLock.withLock {
+            (self.client, self.lifecycle == .connected)
         }
 
-        guard let client = activeClient, connected else {
+        guard let client = activeClient, isConnected else {
             throw MCPClientError.notConnected
         }
 
