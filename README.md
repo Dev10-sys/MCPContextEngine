@@ -106,8 +106,10 @@ import MCPContextEngineMCP
 // 1. Initialize engine with a 4,096-token on-device context budget
 let engine = MCPContextEngine(capacity: 4096)
 
-// 2. Discover available tools from your catalog
-let availableTools: [MCPToolDescriptor] = catalog.allTools()
+// 2. Discover available tools from your registered MCP servers
+let registry = MCPToolRegistry()
+// (register clients and discover catalog...)
+let availableTools = await registry.allTools()
 
 // 3. Process turn: score tools, calculate headroom, execute, and compact
 let result = try await engine.process(
@@ -216,40 +218,55 @@ When building for Apple platforms (`macOS 15.0+`, `iOS 18.0+`), `MCPContextEngin
 
 ---
 
-## Benchmarks
+## Benchmarks and Evaluation
 
-The deterministic benchmark harness evaluates context compliance and tool routing across 10 developer scenarios (covering issue searches, database queries, release notes, and diagnostics):
+The engine's routing and compaction guarantees are evaluated across two complementary environments:
 
-*Representative run from deterministic benchmark fixtures (timings vary by host machine):*
+### 1. Deterministic Synthetic Benchmark Suite (50 Tools across 10 Servers)
+
+The automated test suite (`TaskSuccessBenchmarkTests`) evaluates 10 developer scenarios against a synthetic multi-server catalog of 50 tools across 10 distinct servers (`github`, `filesystem`, `slack`, `database`, `monitoring`, `ci`, `jira`, `analytics`, `calendar`, and `everything`).
+
+For each scenario, the suite deterministically verifies:
+1. **Expected Tool Selection**: The correct tool is routed as the primary candidate.
+2. **Baseline Overflow**: Unmanaged MCP tool declarations and raw payloads exceed the 4,096-token window.
+3. **Headroom Compliance**: The engine compacts results to fit strictly within the calculated result headroom (`reducedTokens <= availableBudgetTokens`).
+4. **Target Entity Preservation**: Specific scenario target tokens (e.g. issue IDs, file paths, alert texts) are retained in the compacted result.
+
+### 2. Interactive Demonstration Pipeline (37 Tools across 6 Servers)
+
+The interactive CLI executable (`swift run MCPContextEngineDemo`) executes the complete turn pipeline against a 37-tool catalog across 6 servers using live GitHub issue search data:
+
+*Representative snapshot from `MCPContextEngineDemo` using `CalibratedTokenProvider`:*
 ```
 ====================================================
-             MCP CONTEXT ENGINE BENCHMARK
+             MCP CONTEXT ENGINE DEMO RUN
 ====================================================
 Scenario: GitHub Issue Search (Concurrency)
-Discovered tools: 37 (across 6 registered servers)
+Discovered catalog:   37 tools across 6 servers
 ---------------- BASELINE (Naive MCP) --------------
 Tools exposed:        37
-Schema tokens:        ~962
-Result tokens:        ~21,850
-Total context:        ~24,512 tokens
-Context overflow:     YES (Deficit: ~20,416 tokens)
+Schema tokens:        1,674 tokens
+Raw result tokens:    ~22,034 tokens
+Total context:        ~25,408 tokens
+Context overflow:     YES (Deficit: ~19,886 tokens)
 Context-fit success:  0% (Exceeds 4,096-token window)
 ---------------- ENGINE (MCPContextEngine) ----------
-Tools exposed:        4 (-89.2% pruned)
-Schema tokens:        ~148 tokens (-84.6%)
-Raw result tokens:    ~21,850 tokens (preserved for audit)
-Reduced tokens:       ~1,600 tokens (-92.7% compaction)
-Total context:        ~3,448 tokens
+Tools selected:       4 (-89.2% pruned)
+Schema tokens:        248 tokens (-85.2%)
+Raw result tokens:    ~22,034 tokens (retained for audit)
+Reduced result tokens: 1,643 tokens (92.5% compaction)
+Total context:        3,591 tokens
 Context overflow:     NO (Fits within 4,096 budget)
 Target preserved:     YES (Issue #92004 retained)
-Context-fit success:  100% (Within budget headroom)
+Context-fit success:  100% (Within 2,148 result headroom)
 Expected tool:        github_search_issues (Rank #1)
 ---------------- LATENCY OVERHEAD ------------------
-Routing latency:      ~11 ms
-Reduction latency:    ~42 ms
-Total overhead:       ~53 ms
+Routing latency:      ~16 ms
+Reduction latency:    ~39 ms
+Total engine overhead: ~55 ms
 ====================================================
 ```
+*Note: Latency figures are illustrative single-run host measurements and vary across hardware and compiler configurations.*
 
 ### Scenario Test Matrix
 

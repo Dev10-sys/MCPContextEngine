@@ -146,9 +146,6 @@ public enum ArgumentValidationError: Error, LocalizedError {
     /// A string argument does not match any of the permitted enum values.
     case invalidEnum(name: String, value: String)
 
-    /// An unknown argument was provided.
-    case unknownArgument(String)
-
     public var errorDescription: String? {
         switch self {
         case .missingRequired(let name):
@@ -157,8 +154,6 @@ public enum ArgumentValidationError: Error, LocalizedError {
             return "Invalid type for argument '\(name)'; expected \(expected)."
         case .invalidEnum(let name, let value):
             return "Invalid value '\(value)' for argument '\(name)'; does not match allowed enum choices."
-        case .unknownArgument(let name):
-            return "Unknown argument '\(name)' provided."
         }
     }
 }
