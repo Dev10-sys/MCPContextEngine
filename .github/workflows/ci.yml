@@ -18,10 +18,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      - name: Verify Node.js / npx
+        run: |
+          node --version
+          npx --version
+
+      - name: Pre-install MCP Everything Server
+        run: npm install -g @modelcontextprotocol/server-everything
 
       - name: Swift Version
         run: swift --version
@@ -44,10 +52,18 @@ jobs:
         with:
           swift-version: "6.0"
 
-      - name: Setup Node.js
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+
+      - name: Verify Node.js / npx
+        run: |
+          node --version
+          npx --version
+
+      - name: Pre-install MCP Everything Server
+        run: npm install -g @modelcontextprotocol/server-everything
 
       - name: Swift Version
         run: swift --version
@@ -57,3 +73,4 @@ jobs:
 
       - name: Run Test Suite
         run: swift test --enable-code-coverage
+

@@ -5,7 +5,7 @@
 [![Platforms](https://img.shields.io/badge/Platforms-macOS%2015%2B%20%7C%20iOS%2018%2B%20%7C%20Linux-blue.svg)](https://apple.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-A high-performance runtime middleware layer for Swift that bridges **Model Context Protocol (MCP)** servers with **Apple Foundation Models** and LLM runtimes. It performs application-side, task-aware context orchestration: routing relevant tools from large multi-server catalogs, tracking live context headroom, compacting oversized payloads with strict mathematical token guarantees, and streaming real-time telemetry to developer dashboards.
+A high-performance runtime middleware layer for Swift that bridges **Model Context Protocol (MCP)** servers with **Apple Foundation Models** and LLM runtimes. It performs application-side, task-aware context orchestration: routing relevant tools from large multi-server catalogs, tracking live context headroom, compacting oversized payloads with strict token-budget guarantees relative to the configured TokenProvider, and streaming real-time telemetry to developer dashboards.
 
 ```
               User Task / Prompt
@@ -49,7 +49,7 @@ When a selected tool executes and returns raw JSON — repository issue searches
 
 1. **Intelligent Tool Routing**: Deterministic multi-criteria scoring across name tokenization, description matching, query keyword extraction, and schema parameter relevance — selecting only top-K relevant tools.
 2. **Context Headroom Accounting**: Introspects model context window capacity (4,096 on-device ANE vs. 32,768 Private Cloud Compute) and reserves token budgets for system prompts, history, and response buffers.
-3. **Strict Guaranteed Reducer Invariant**: Structural pruning (nulls, empty collections, oversized strings, array pagination) coupled with a deterministic hard ceiling safety net guaranteeing that `reducedTokens <= availableBudgetTokens` holds in 100% of executions.
+3. **Strict Guaranteed Reducer Invariant**: Structural pruning (nulls, empty collections, oversized strings, array pagination) coupled with a deterministic hard ceiling safety net guaranteeing that `reducedTokens <= availableBudgetTokens` holds relative to the configured TokenProvider across 100% of executions.
 4. **Truthful Telemetry & Observability**: Emits structured runtime events recording exact token metrics, overflow status, latency overheads, target entity preservation, and task success rates for real-time visualization.
 
 ---
@@ -60,6 +60,7 @@ The benchmark suite compares naive MCP execution (exposing all discovered schema
 
 All metrics are programmatically measured and verified in `Tests/BenchmarkTests/TaskSuccessBenchmarkTests.swift`.
 
+*Representative benchmark capture measured on macOS 15 Apple Silicon / Linux:*
 ```
 ====================================================
              MCP CONTEXT ENGINE BENCHMARK
@@ -150,9 +151,9 @@ Sources/
 
 ## Security Model
 
-1. **Tool Execution Allowlist**: `MCPToolExecutor` enforces that only tools scored and selected by `ToolRouter` can be dispatched. Unapproved tools are blocked before process execution with `ExecutionSecurityError.unauthorizedTool`.
+1. **Tool Execution Allowlist**: `MCPToolExecutor` enforces that only tools scored and selected by `ToolRouter` (or approved by the caller) can be dispatched. Unapproved tools are blocked before process execution with `ExecutionSecurityError.unauthorizedTool`.
 2. **Prompt Injection Containment**: MCP results are classified as `.tool` data payloads. `MCPResultConverter` neutralizes system instruction delimiter tokens (`<|im_start|>`, `<|system|>`, `[SYSTEM DIRECTIVE]`) preventing untrusted server outputs from hijacking model instructions.
-3. **Cross-Server Collision Prevention & Disambiguation**: Tools are indexed by fully-qualified identifiers (`serverId:name`). `MCPToolRegistry` provides `tool(byId:)`, `tools(named:)`, and `isAmbiguous(toolName:)`, allowing exact dispatch without ambiguity when multiple servers expose matching names (e.g. `github:search` vs `slack:search`).
+3. **Cross-Server Collision Prevention & Disambiguation**: Tools are indexed by fully-qualified identifiers (`serverId:name`). `MCPToolRegistry` provides `tool(byId:)`, `tools(named:)`, and `isAmbiguous(toolName:)`. Attempting to invoke an ambiguous bare name throws `ExecutionSecurityError.ambiguousTool`, requiring callers to specify the exact fully-qualified identifier.
 4. **Immutability of Raw Data**: Reduction is non-destructive. `ReductionResult.originalData` retains the untouched raw server output for auditability, provenance, and incremental retrieval.
 
 ---
@@ -173,7 +174,7 @@ The interactive demonstration (`MCPContextEngineDemo`) exercises the full operat
 MCP Tool Registry  ──▶  Tool Router  ──▶  MCPToolExecutor  ──▶  Result Reducer  ──▶  Apple Tool Bridge  ──▶  Telemetry
 ```
 - **Showcase Demo**: Employs an in-memory MCP client registered with actual GitHub REST API live data (`swiftlang/swift` issues and concurrency diagnostics) to demonstrate end-to-end multi-criteria tool ranking, strict token budget preservation, and structured JSON reduction.
-- **Production Stdio Transport**: Production deployments use `StdioMCPClientAdapter`, powered by the official Apple / Anthropic `ModelContextProtocol` Swift SDK over standard I/O child process pipes (validated in CI against the live `@modelcontextprotocol/server-everything` test harness).
+- **Production Stdio Transport**: Production deployments use `StdioMCPClientAdapter`, powered by the official Apple / Anthropic `ModelContextProtocol` Swift SDK over standard I/O child process pipes (with automated integration tests running against `@modelcontextprotocol/server-everything` in CI).
 
 ---
 
@@ -203,7 +204,7 @@ The console automatically receives and visualizes live telemetry events:
 
 ### Prerequisites
 - Swift 6.0+ toolchain
-- Node.js 20+ (for live Everything MCP Server integration tests via `npx`)
+- Node.js 22+ (for live Everything MCP Server integration tests via `npx`)
 - Python 3.8+ (for optional dashboard server)
 
 ### Build
@@ -211,7 +212,7 @@ The console automatically receives and visualizes live telemetry events:
 swift build
 ```
 
-### Run Full Test Suite (34 tests)
+### Run Full Test Suite
 ```bash
 swift test
 ```
@@ -237,7 +238,7 @@ swift run MCPContextEngineDemo
 
 Every commit is verified across Darwin and Linux environments via GitHub Actions:
 - **macOS (Apple Silicon)**: `macos-15` with Apple Swift 6 / Xcode 16
-- **Ubuntu Linux**: `ubuntu-latest` with Swift 6.0 and Node.js 20
+- **Ubuntu Linux**: `ubuntu-latest` with Swift 6.0 and Node.js 22
 
 ---
 

@@ -56,6 +56,37 @@ public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
 }
 
 #if canImport(MCP)
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
+/// Lightweight cross-platform unfair lock safe for use around quick synchronous state reads/writes in async contexts.
+final class ClientStateLock: @unchecked Sendable {
+    #if canImport(Darwin)
+    private var unfairLock = os_unfair_lock()
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        os_unfair_lock_lock(&unfairLock)
+        defer { os_unfair_lock_unlock(&unfairLock) }
+        return try body()
+    }
+    #else
+    private var mutex = pthread_mutex_t()
+    init() {
+        pthread_mutex_init(&mutex, nil)
+    }
+    deinit {
+        pthread_mutex_destroy(&mutex)
+    }
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        pthread_mutex_lock(&mutex)
+        defer { pthread_mutex_unlock(&mutex) }
+        return try body()
+    }
+    #endif
+}
+
 /// Production MCP client adapter bridging to the official Model Context Protocol Swift SDK (`MCP.Client`).
 public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable {
     public let serverId: String
@@ -66,6 +97,7 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     private var client: MCP.Client?
     private var process: Process?
     private var isConnected = false
+    private let stateLock = ClientStateLock()
 
     public init(
         serverId: String,
@@ -80,22 +112,32 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     public func connect() async throws {
-        guard !isConnected else { return }
+        let alreadyConnected = stateLock.withLock { isConnected }
+        if alreadyConnected { return }
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: command)
         proc.arguments = arguments
-        if !environment.isEmpty {
-            proc.environment = environment
+
+        // Inherit current process environment and overlay custom overrides
+        var mergedEnv = ProcessInfo.processInfo.environment
+        for (key, val) in environment {
+            mergedEnv[key] = val
         }
+        proc.environment = mergedEnv
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
+        let errorPipe = Pipe()
         proc.standardInput = inputPipe
         proc.standardOutput = outputPipe
+        proc.standardError = errorPipe
 
         try proc.run()
-        self.process = proc
+
+        stateLock.withLock {
+            self.process = proc
+        }
 
         #if canImport(System)
         let transport = StdioTransport(
@@ -111,12 +153,31 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
         let mcpClient = MCP.Client(name: "MCPContextEngine", version: "1.0.0")
         try await mcpClient.connect(transport: transport)
 
-        self.client = mcpClient
-        self.isConnected = true
+        stateLock.withLock {
+            self.client = mcpClient
+            self.isConnected = true
+        }
+    }
+
+    public func disconnect() {
+        let procToTerminate: Process? = stateLock.withLock {
+            let proc = self.process
+            self.client = nil
+            self.process = nil
+            self.isConnected = false
+            return proc
+        }
+        if let proc = procToTerminate, proc.isRunning {
+            proc.terminate()
+        }
     }
 
     public func listTools() async throws -> [MCPToolDescriptor] {
-        guard let client = client, isConnected else {
+        let (activeClient, connected) = stateLock.withLock {
+            (self.client, self.isConnected)
+        }
+
+        guard let client = activeClient, connected else {
             throw MCPClientError.notConnected
         }
 
@@ -160,7 +221,11 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     public func callTool(name: String, arguments: [String: Any]) async throws -> String {
-        guard let client = client, isConnected else {
+        let (activeClient, connected) = stateLock.withLock {
+            (self.client, self.isConnected)
+        }
+
+        guard let client = activeClient, connected else {
             throw MCPClientError.notConnected
         }
 
@@ -194,9 +259,7 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     deinit {
-        if let process = process, process.isRunning {
-            process.terminate()
-        }
+        disconnect()
     }
 }
 #endif

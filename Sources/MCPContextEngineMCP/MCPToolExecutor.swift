@@ -56,6 +56,13 @@ public struct MCPToolExecutor: Sendable {
         }
 
         // 2. Resolve by bare name
+        if await registry.isAmbiguous(toolName: identifier) {
+            let candidates = await registry.tools(named: identifier).map { $0.id }
+            throw ExecutionSecurityError.ambiguousTool(
+                "Execution of tool '\(identifier)' is ambiguous across multiple registered servers: \(candidates.joined(separator: ", ")). Please specify fully-qualified identifier ('serverId:name')."
+            )
+        }
+
         guard let client = await registry.client(forToolName: identifier) else {
             throw MCPClientError.toolNotFound("No registered server provides tool '\(identifier)'.")
         }
@@ -84,10 +91,11 @@ public struct MCPToolExecutor: Sendable {
 
 public enum ExecutionSecurityError: Error, LocalizedError {
     case unauthorizedTool(String)
+    case ambiguousTool(String)
 
     public var errorDescription: String? {
         switch self {
-        case .unauthorizedTool(let msg):
+        case .unauthorizedTool(let msg), .ambiguousTool(let msg):
             return msg
         }
     }

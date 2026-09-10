@@ -13,16 +13,16 @@ MCPContextEngine operates as middleware between Model Context Protocol (MCP) ser
 ### Core Security Invariants
 
 1. **Strict Tool Execution Boundary**
-   Only tools explicitly approved by the `ToolRouter` and authenticated by the caller can be executed. Unselected tools are prevented from invocation.
+   Only tools explicitly approved in the execution allowlist (e.g., as determined by the `ToolRouter` or configured by the caller) can be executed. Attempts to execute unauthorized or unapproved tools throw `ExecutionSecurityError.unauthorizedTool`. Ambiguous tool name resolutions across multiple registered servers throw `ExecutionSecurityError.ambiguousTool`.
 
-2. **Prompt Injection Containment**
-   MCP results are strictly treated as data payloads (`role: .tool`), never injected into system instruction blocks. The `ResultReducer` preserves data semantics and sanitizes delimiter structures to prevent jailbreak or control flow hijack via tool outputs.
+2. **Prompt Injection & Delimiter Sanitization**
+   MCP results are strictly handled as data payloads (`role: .tool`), never injected directly into system instruction prompts. Special model delimiter sequences (such as `<|im_start|>`, `<|system|>`, `[SYSTEM DIRECTIVE]`, and `<<SYS>>`) are sanitized by `MCPResultConverter` to mitigate delimiter collision and control flow hijack via tool outputs.
 
-3. **Context Denial of Service (DoS) Defense**
-   Untrusted servers returning arbitrarily large payloads (megabytes of JSON/text) are prevented from overwhelming memory or overflowing model context budgets through hard truncation, array length bounds, and progressive reduction passes.
+3. **Model Context Overflow Defense**
+   Untrusted or verbose MCP tools returning large payloads (megabytes of JSON/text) are prevented from overflowing model context windows through deterministic character and token ceilings, array truncations, and multi-pass structural reduction in `ResultReducer`.
 
 4. **Auditability & Attribution**
-   All reduced results maintain cryptographic/content hashes and references to their raw inputs. Source attribution is preserved across all reduction transforms.
+   Reduced results maintain references to their raw inputs, reduction strategy applied, original vs. reduced token counts, and tool source attribution in `ReductionResult` and execution telemetry.
 
 ## Reporting a Vulnerability
 

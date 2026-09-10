@@ -83,32 +83,67 @@ final class FoundationModelsAdapterTests: XCTestCase {
                 type: "object",
                 properties: [
                     "action": .init(type: "string", description: "Action to take"),
-                    "count": .init(type: "number", description: "Count parameter")
+                    "count": .init(type: "integer", description: "Count parameter"),
+                    "enabled": .init(type: "boolean", description: "Enabled flag")
                 ],
-                required: ["action"]
+                required: ["action", "count"]
             ),
             serverId: "test_server"
         )
 
         let appleTool = AppleMCPTool(descriptor: descriptor) { (args: [String: Any]) in
             let action = args["action"] as? String ?? "unknown"
-            let count = args["count"] as? String ?? "0"
-            return "Executed \(action) with count \(count)"
+            let count = args["count"] as? Int ?? 0
+            let enabled = args["enabled"] as? Bool ?? false
+            return "Executed \(action) with count \(count) enabled:\(enabled)"
         }
 
         XCTAssertEqual(appleTool.name, "test_dynamic_tool")
         XCTAssertEqual(appleTool.description, "Test dynamic tool execution")
 
-        // Test with dictionary call
-        let result1 = try await appleTool.call(arguments: ["action": "analyze", "count": "42"])
-        XCTAssertEqual(result1, "Executed analyze with count 42")
+        // Test with dictionary call preserving true Int and Bool
+        let result1 = try await appleTool.call(arguments: ["action": "analyze", "count": 42, "enabled": true])
+        XCTAssertEqual(result1, "Executed analyze with count 42 enabled:true")
 
-        // Test with typed dynamic Arguments call
-        let typedArgs = AppleMCPTool.Arguments(dictionary: ["action": "compact", "count": "10"])
-        XCTAssertEqual(typedArgs["action"], "compact")
-        XCTAssertEqual(typedArgs["count"], "10")
+        // Test with typed dynamic Arguments preserving types and convenience accessors
+        let typedArgs = AppleMCPTool.Arguments(dictionary: ["action": "compact", "count": 10, "enabled": false])
+        XCTAssertEqual(typedArgs.string(for: "action"), "compact")
+        XCTAssertEqual(typedArgs.int(for: "count"), 10)
+        XCTAssertEqual(typedArgs.bool(for: "enabled"), false)
         let result2 = try await appleTool.call(arguments: typedArgs)
-        XCTAssertEqual(result2, "Executed compact with count 10")
+        XCTAssertEqual(result2, "Executed compact with count 10 enabled:false")
+
+        // Test JSON decoding into Arguments
+        let jsonString = "{\"action\": \"benchmark\", \"count\": 100, \"enabled\": true}"
+        let decodedArgs = try JSONDecoder().decode(AppleMCPTool.Arguments.self, from: Data(jsonString.utf8))
+        XCTAssertEqual(decodedArgs.int(for: "count"), 100)
+        XCTAssertEqual(decodedArgs.bool(for: "enabled"), true)
+        XCTAssertEqual(decodedArgs.string(for: "action"), "benchmark")
+    }
+
+    func testDynamicArgumentValueTypePreservation() throws {
+        let original: [String: Any] = [
+            "int": 42,
+            "double": 3.1415,
+            "bool": true,
+            "string": "mcp",
+            "array": ["swift", "engine"],
+            "nested": ["key": 10]
+        ]
+        let args = AppleMCPTool.Arguments(dictionary: original)
+        XCTAssertEqual(args.int(for: "int"), 42)
+        XCTAssertEqual(args.double(for: "double") ?? 0.0, 3.1415, accuracy: 0.0001)
+        XCTAssertEqual(args.bool(for: "bool"), true)
+        XCTAssertEqual(args.string(for: "string"), "mcp")
+
+        let recovered = args.asDictionary()
+        XCTAssertEqual(recovered["int"] as? Int, 42)
+        XCTAssertEqual(recovered["bool"] as? Bool, true)
+        XCTAssertEqual(recovered["string"] as? String, "mcp")
+        let arr = recovered["array"] as? [Any]
+        XCTAssertEqual(arr?.count, 2)
+        let nested = recovered["nested"] as? [String: Any]
+        XCTAssertEqual(nested?["key"] as? Int, 10)
     }
 
     func testNativeTokenCountAndContextSizeFallback() async throws {

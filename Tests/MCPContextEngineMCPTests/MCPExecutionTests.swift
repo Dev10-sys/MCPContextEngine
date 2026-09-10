@@ -86,4 +86,30 @@ final class MCPExecutionTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("blocked by MCPContextEngine security policy"))
         }
     }
+
+    func testAmbiguousBareNameExecutionThrowsError() async throws {
+        let registry = MCPToolRegistry()
+        let toolA = MCPToolDescriptor(name: "search", serverId: "server_a")
+        let toolB = MCPToolDescriptor(name: "search", serverId: "server_b")
+
+        let clientA = MockMCPClient(serverId: "server_a", tools: [toolA], handlers: ["search": { _ in "result_a" }])
+        let clientB = MockMCPClient(serverId: "server_b", tools: [toolB], handlers: ["search": { _ in "result_b" }])
+
+        await registry.registerServer(clientA)
+        await registry.registerServer(clientB)
+        _ = try await registry.discoverAllTools()
+
+        let executor = MCPToolExecutor(registry: registry)
+
+        do {
+            _ = try await executor.execute(identifier: "search")
+            XCTFail("Executing ambiguous bare tool name should throw ExecutionSecurityError.ambiguousTool")
+        } catch let error as ExecutionSecurityError {
+            if case .ambiguousTool(let msg) = error {
+                XCTAssertTrue(msg.contains("ambiguous across multiple registered servers"))
+            } else {
+                XCTFail("Expected .ambiguousTool error, got: \(error)")
+            }
+        }
+    }
 }
