@@ -12,7 +12,7 @@ public final class ContextBudgetManager: @unchecked Sendable {
         reservedResponseTokens: Int = 700,
         systemPromptTokens: Int = 300,
         historyTokens: Int = 700,
-        tokenProvider: TokenProvider = MockTokenProvider()
+        tokenProvider: TokenProvider = CalibratedTokenProvider()
     ) {
         self.budget = ContextBudget(
             totalCapacity: totalCapacity,
@@ -53,8 +53,9 @@ public final class ContextBudgetManager: @unchecked Sendable {
     }
 
     /// Updates the conversation history token allocation from a list of context items.
+    /// Recalculates tokens using the manager's configured TokenProvider for strict provider-relative consistency.
     public func setHistory(_ items: [ContextItem]) {
-        let tokens = items.reduce(0) { $0 + $1.tokenCount }
+        let tokens = items.reduce(0) { $0 + tokenProvider.countTokens(text: $1.content) }
         lock.lock()
         defer { lock.unlock() }
         self.budget = ContextBudget(
@@ -68,7 +69,7 @@ public final class ContextBudgetManager: @unchecked Sendable {
 
     /// Updates active tool schema tokens based on the selected tool descriptors.
     public func setSelectedTools(_ tools: [MCPToolDescriptor]) {
-        let schemaTokens = tools.reduce(0) { $0 + $1.estimatedSchemaTokens() }
+        let schemaTokens = tools.reduce(0) { $0 + $1.estimatedSchemaTokens(using: tokenProvider) }
         lock.lock()
         defer { lock.unlock() }
         self.budget = budget.with(toolSchemaTokens: schemaTokens)

@@ -3,11 +3,11 @@ import XCTest
 
 final class ResultReducerStrictInvariantTests: XCTestCase {
     var reducer: ResultReducer!
-    var tokenProvider: MockTokenProvider!
+    var tokenProvider: CalibratedTokenProvider!
 
     override func setUp() {
         super.setUp()
-        tokenProvider = MockTokenProvider()
+        tokenProvider = CalibratedTokenProvider()
         reducer = ResultReducer(tokenProvider: tokenProvider)
     }
 

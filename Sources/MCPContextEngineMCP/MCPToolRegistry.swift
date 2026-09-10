@@ -16,9 +16,12 @@ public actor MCPToolRegistry {
     public init() {}
 
     /// Registers an MCP server client with the registry.
-    /// If a client with the same serverId already exists, any previously registered tools
-    /// for that server are purged to maintain catalog consistency.
+    /// If a client with the same serverId already exists, the previous client is disconnected
+    /// and any previously registered tools for that server are purged to maintain catalog consistency.
     public func registerServer(_ client: MCPClientProtocol) {
+        if let previous = clients[client.serverId] {
+            previous.disconnect()
+        }
         if let previousToolIds = serverToolIndex[client.serverId] {
             for toolId in previousToolIds {
                 registeredTools.removeValue(forKey: toolId)
@@ -28,8 +31,11 @@ public actor MCPToolRegistry {
         clients[client.serverId] = client
     }
 
-    /// Unregisters an MCP server and removes all tools registered under its namespace.
+    /// Unregisters an MCP server, disconnects its client, and removes all tools registered under its namespace.
     public func unregisterServer(serverId: String) {
+        if let client = clients[serverId] {
+            client.disconnect()
+        }
         if let previousToolIds = serverToolIndex[serverId] {
             for toolId in previousToolIds {
                 registeredTools.removeValue(forKey: toolId)
@@ -46,6 +52,7 @@ public actor MCPToolRegistry {
 
     /// Connects to all registered MCP servers and discovers available tools concurrently.
     /// Cleans up any tools that disappeared from servers since the previous discovery.
+    /// Returns discovered tools in deterministic sorted order (`tool.id`).
     public func discoverAllTools() async throws -> [MCPToolDescriptor] {
         var allDiscovered: [MCPToolDescriptor] = []
 
@@ -78,7 +85,7 @@ public actor MCPToolRegistry {
             }
         }
 
-        return allDiscovered
+        return allDiscovered.sorted { $0.id < $1.id }
     }
 
     /// Discovers tools for a specific registered server, cleaning up any disappeared tools.
@@ -98,7 +105,7 @@ public actor MCPToolRegistry {
             registeredTools.removeValue(forKey: staleId)
         }
         serverToolIndex[serverId] = newToolIds
-        return tools
+        return tools.sorted { $0.id < $1.id }
     }
 
     /// Looks up a registered tool descriptor by fully-qualified ID ("serverId:name").
@@ -106,10 +113,28 @@ public actor MCPToolRegistry {
         registeredTools[id]
     }
 
-    /// Looks up a tool by bare name. Returns the first match if multiple servers expose
-    /// a tool with the same name. Prefer `tool(byId:)` in multi-server environments.
+    /// Looks up a registered tool descriptor by bare name when uniquely defined.
+    /// If multiple servers expose a tool with the same name, returns nil to prevent ambiguity footguns.
+    /// Use `uniqueTool(named:)` to throw a descriptive error, or `tools(named:)` to inspect all matches.
     public func tool(named name: String) -> MCPToolDescriptor? {
-        registeredTools.values.first { $0.name == name }
+        let matches = tools(named: name)
+        guard matches.count == 1 else { return nil }
+        return matches.first
+    }
+
+    /// Looks up a tool by bare name, throwing an error if the name is ambiguous across servers or not found.
+    public func uniqueTool(named name: String) throws -> MCPToolDescriptor {
+        let matches = tools(named: name)
+        if matches.isEmpty {
+            throw MCPClientError.toolNotFound(name)
+        }
+        if matches.count > 1 {
+            let candidates = matches.map(\.id).joined(separator: ", ")
+            throw ExecutionSecurityError.ambiguousTool(
+                "Execution of tool '\(name)' is ambiguous across multiple registered servers: \(candidates). Please specify fully-qualified identifier ('serverId:name')."
+            )
+        }
+        return matches[0]
     }
 
     /// Retrieves all currently registered tool descriptors.

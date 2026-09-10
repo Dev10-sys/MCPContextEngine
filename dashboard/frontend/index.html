@@ -574,194 +574,79 @@
     <!-- ======================================================= -->
     <div id="view-run" class="view-panel">
       
-      <!-- Developer Metric Gauges -->
-      <div class="metric-gauges">
-        
-        <!-- Gauge 1: Context Budget -->
-        <div class="gauge-box">
-          <div class="gauge-label">
-            <span>Context Allocation</span>
-            <span style="color: var(--accent-green);">Within Limit</span>
-          </div>
-          <div class="gauge-value">3,448 <span style="font-size: 13px; color: var(--text-muted);">/ 4,096 tokens</span></div>
-          <div class="progress-track">
-            <div class="progress-bar bar-budget" style="width: 84.2%;"></div>
-          </div>
-          <div class="gauge-footer">
-            <span>Headroom: 648 tokens</span>
-            <span>Reserved: 700 tokens</span>
-          </div>
+      <div id="no-telemetry-notice" class="card" style="text-align: center; padding: 48px 24px;">
+        <div style="font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
+          Waiting for telemetry…
         </div>
-
-        <!-- Gauge 2: Tool Selection -->
-        <div class="gauge-box">
-          <div class="gauge-label">
-            <span>Tool Selection</span>
-            <span style="color: var(--accent-blue);">-89.2% Pruned</span>
-          </div>
-          <div class="gauge-value">4 <span style="font-size: 13px; color: var(--text-muted);">/ 37 tools exposed</span></div>
-          <div class="progress-track">
-            <div class="progress-bar bar-tools" style="width: 10.8%;"></div>
-          </div>
-          <div class="gauge-footer">
-            <span>Top-K: 4</span>
-            <span>Noise Tools Filtered: 33</span>
-          </div>
+        <div style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); max-width: 480px; margin: 0 auto; line-height: 1.6;">
+          Run the demo (<code>swift run MCPContextEngineDemo</code>) or invoke the engine pipeline to stream live execution metrics to this console.
         </div>
-
-        <!-- Gauge 3: Reduction -->
-        <div class="gauge-box">
-          <div class="gauge-label">
-            <span>Result Compaction</span>
-            <span style="color: var(--accent-purple);">-92.7%</span>
-          </div>
-          <div class="gauge-value">1,600 <span style="font-size: 13px; color: var(--text-muted);">from 21,850 tokens</span></div>
-          <div class="progress-track">
-            <div class="progress-bar bar-reduction" style="width: 92.7%;"></div>
-          </div>
-          <div class="gauge-footer">
-            <span>Duration: 87.47 ms</span>
-            <span>Preserved Target: Issue #92004 ✓</span>
-          </div>
-        </div>
-
       </div>
 
-      <!-- Pipeline Trace -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Live Execution Trace (Run ID: run-swift-92004)</span>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-green);">TOTAL OVERHEAD: 99.37 MS</span>
+      <div id="active-telemetry-content" style="display: none;">
+        <!-- Developer Metric Gauges -->
+        <div class="metric-gauges">
+          
+          <!-- Gauge 1: Context Budget -->
+          <div class="gauge-box">
+            <div class="gauge-label">
+              <span>Context Allocation</span>
+              <span id="gauge-budget-status" style="color: var(--accent-green);">Within Limit</span>
+            </div>
+            <div class="gauge-value" id="gauge-budget-val">-- <span style="font-size: 13px; color: var(--text-muted);">/ 4,096 tokens</span></div>
+            <div class="progress-track">
+              <div class="progress-bar bar-budget" id="bar-budget" style="width: 0%;"></div>
+            </div>
+            <div class="gauge-footer">
+              <span id="gauge-headroom">Headroom: --</span>
+              <span>Reserved: 700 tokens</span>
+            </div>
+          </div>
+
+          <!-- Gauge 2: Tool Selection -->
+          <div class="gauge-box">
+            <div class="gauge-label">
+              <span>Tool Selection</span>
+              <span id="gauge-tool-pruned" style="color: var(--accent-blue);">--</span>
+            </div>
+            <div class="gauge-value" id="gauge-tools-val">-- <span style="font-size: 13px; color: var(--text-muted);">tools exposed</span></div>
+            <div class="progress-track">
+              <div class="progress-bar bar-tools" id="bar-tools" style="width: 0%;"></div>
+            </div>
+            <div class="gauge-footer">
+              <span id="gauge-topk">Selected Tools</span>
+              <span id="gauge-filtered">Filtered Catalog</span>
+            </div>
+          </div>
+
+          <!-- Gauge 3: Reduction -->
+          <div class="gauge-box">
+            <div class="gauge-label">
+              <span>Result Compaction</span>
+              <span id="gauge-reduction-ratio" style="color: var(--accent-purple);">--</span>
+            </div>
+            <div class="gauge-value" id="gauge-reduction-val">-- <span style="font-size: 13px; color: var(--text-muted);">tokens</span></div>
+            <div class="progress-track">
+              <div class="progress-bar bar-reduction" id="bar-reduction" style="width: 0%;"></div>
+            </div>
+            <div class="gauge-footer">
+              <span id="gauge-reduction-latency">Duration: --</span>
+              <span id="gauge-target-status">Target Preserved: --</span>
+            </div>
+          </div>
+
         </div>
 
-        <div class="pipeline-container">
-          
-          <div class="trace-item">
-            <div class="trace-head">
-              <span class="trace-tag">[01] INCOMING_TASK</span>
-              <span>16:44:05.102</span>
-            </div>
-            <div class="trace-content">
-              Query: "Find open Swift concurrency issues related to our project and tell me which ones are probably relevant."
-            </div>
+        <!-- Pipeline Trace -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" id="trace-title">Live Execution Trace</span>
+            <span id="trace-overhead" style="font-family: var(--font-mono); font-size: 11px; color: var(--accent-green);">TOTAL OVERHEAD: --</span>
           </div>
 
-          <div class="trace-item">
-            <div class="trace-head">
-              <span class="trace-tag">[02] TOOL_ROUTING</span>
-              <span>16:44:05.114 &bull; 11.90 ms</span>
-            </div>
-            <div class="trace-content">
-              Evaluated 37 discovered tools against multi-signal scorer (name, description, query keywords).<br>
-              &bull; <strong>github_search_issues</strong> [score: 0.27] (name: 0.29, desc: 0.29, query: 0.29) &rarr; <span style="color: var(--accent-green);">SELECTED (RANK #1)</span><br>
-              &bull; <strong>github_add_labels_to_issue</strong> [score: 0.06] &rarr; <span style="color: var(--accent-green);">SELECTED (RANK #2)</span><br>
-              &bull; <strong>github_create_issue</strong> [score: 0.06] &rarr; <span style="color: var(--accent-green);">SELECTED (RANK #3)</span><br>
-              &bull; <strong>github_create_issue_comment</strong> [score: 0.06] &rarr; <span style="color: var(--accent-green);">SELECTED (RANK #4)</span><br>
-              &bull; 33 tools (slack_send_message, db_execute_query, calendar_list_events...) &rarr; <span style="color: var(--text-muted);">FILTERED OUT (Score &le; 0.00)</span>
-            </div>
+          <div class="pipeline-container" id="pipeline-container">
+            <!-- Dynamically populated from live telemetry event -->
           </div>
-
-          <div class="trace-item">
-            <div class="trace-head">
-              <span class="trace-tag">[03] BUDGET_ALLOCATION</span>
-              <span>16:44:05.116</span>
-            </div>
-            <div class="trace-content">
-              Capacity: 4,096 tokens | System: 300 | History: 700 | Tool Schemas (4 tools): 148 | Reserved Response: 700<br>
-              &bull; <strong>Available Result Headroom:</strong> 2,248 tokens
-            </div>
-          </div>
-
-          <div class="trace-item">
-            <div class="trace-head">
-              <span class="trace-tag">[04] MCP_TOOL_EXECUTION</span>
-              <span>16:44:05.890 &bull; live github api</span>
-            </div>
-            <div class="trace-content">
-              Executing: <code>github_search_issues(labels: "concurrency", state: "open")</code><br>
-              Endpoint: <code>https://api.github.com/repos/swiftlang/swift/issues?state=open&labels=concurrency</code><br>
-              Payload received: 87,399 characters (~21,850 tokens).<br>
-              <span style="color: var(--accent-red);">Context Overflow Pre-check: DEFICIT DETECTED (-19,602 tokens beyond available headroom).</span>
-            </div>
-          </div>
-
-          <div class="trace-item">
-            <div class="trace-head">
-              <span class="trace-tag">[05] RESULT_REDUCER</span>
-              <span>16:44:05.977 &bull; 87.47 ms</span>
-            </div>
-            <div class="trace-content">
-              Deterministic compaction applied: <code>cap_array_length</code>, <code>prune_nulls</code>, <code>prune_empty</code>, <code>truncate_strings</code>, <code>aggressive_compaction</code>.<br>
-              Reduced from 21,850 tokens to 1,600 tokens (-92.7%). Fits within 2,248 available headroom.<br>
-              <span style="color: var(--accent-green);">&bull; Target Issue #92004 preserved: "Inheriting isolation from isolated conformances ONLY depends on the first generic with can cause incorrect executor"</span>
-            </div>
-
-            <!-- Side-by-side Diff View -->
-            <div class="diff-container">
-              <div>
-                <div style="font-size: 11px; color: var(--accent-red); margin-bottom: 4px;">RAW MCP PAYLOAD (87,399 BYTES &bull; 21,850 TOKENS)</div>
-                <div class="diff-pane">[
-  {
-    "url": "https://api.github.com/repos/swiftlang/swift/issues/92004",
-    "html_url": "https://github.com/swiftlang/swift/issues/92004",
-    <span class="highlight-issue">"number": 92004,</span>
-    <span class="highlight-issue">"title": "Inheriting isolation from isolated conformances ONLY depends on the first generic with can cause incorrect executor",</span>
-    "user": {
-      "login": "atifdev10",
-      "id": 12345678,
-      "avatar_url": "https://avatars.githubusercontent.com/u/12345678"
-    },
-    "labels": [{ "name": "concurrency" }],
-    "state": "open",
-    "comments": 4,
-    "body": "### Description\nInheriting isolation from isolated conformances...",
-    "...": "[15 items with extensive reactions, timeline events, and raw headers]"
-  }
-]</div>
-              </div>
-
-              <div>
-                <div style="font-size: 11px; color: var(--accent-green); margin-bottom: 4px;">COMPACTED MODEL CONTEXT (1,600 TOKENS)</div>
-                <div class="diff-pane">[
-  {
-    <span class="highlight-issue">"number": 92004,</span>
-    <span class="highlight-issue">"title": "Inheriting isolation from isolated conformances ONLY depends on the first generic with can cause incorrect executor",</span>
-    "user": { "login": "atifdev10" },
-    "labels": [{ "name": "concurrency" }],
-    "state": "open",
-    "comments": 4,
-    "body": "Inheriting isolation from isolated conformances ONLY depends on the first generic with can cause incorrect executor..."
-  },
-  {
-    "number": 91882,
-    "title": "Crash in TaskGroup with isolation inheritance during cancellation",
-    "user": { "login": "swift-ci" },
-    "labels": [{ "name": "concurrency" }],
-    "state": "open"
-  },
-  {
-    "_pagination": {
-      "total_items": 15,
-      "shown": 5,
-      "pruned": 10,
-      "notice": "10 items pruned to enforce token budget headroom"
-    }
-  }
-]</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="trace-item">
-            <div class="trace-head">
-              <span class="trace-tag">[06] FOUNDATION_MODELS_SYNTHESIS</span>
-              <span>16:44:06.120</span>
-            </div>
-            <div class="trace-content" style="background: rgba(88, 166, 255, 0.05); padding: 10px; border-radius: 4px; border: 1px solid rgba(88, 166, 255, 0.2);">
-              <strong>Model Output:</strong> "Identified 3 open Swift concurrency issues. The most relevant is <b>Issue #92004</b> (<i>'Inheriting isolation from isolated conformances ONLY depends on the first generic with can cause incorrect executor'</i>, authored by <code>atifdev10</code>), which documents an executor mismatch bug in isolated protocol conformances. Related issues include #91882 (TaskGroup cancellation crash)."
-            </div>
-          </div>
-
         </div>
       </div>
 
@@ -773,8 +658,8 @@
     <div id="view-benchmark" class="view-panel">
       <div class="card">
         <div class="card-header">
-          <span class="card-title">Empirical Benchmark: Naive Baseline vs. MCPContextEngine</span>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">Environment: Swift 6.0.3 &bull; Ubuntu 24.04 WSL</span>
+          <span class="card-title">Deterministic Benchmark: Naive Baseline vs. MCPContextEngine</span>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">Deterministic Test Harness &bull; Representative Run</span>
         </div>
 
         <table class="benchmark-table">
@@ -824,27 +709,27 @@
               <td><span class="badge-diff-good">Zero context crashes</span></td>
             </tr>
             <tr>
-              <td>Task Completion Rate</td>
-              <td style="color: var(--accent-red);">0% (Truncated/Failed)</td>
-              <td style="color: var(--accent-green);">100% (Issue #92004 preserved)</td>
-              <td><span class="badge-diff-good">+100% Reliable completion</span></td>
+              <td>Context-Fit Success Rate</td>
+              <td style="color: var(--accent-red);">0% (Truncated/Overflow)</td>
+              <td style="color: var(--accent-green);">100% (Budget & target satisfied)</td>
+              <td><span class="badge-diff-good">Guaranteed context compliance</span></td>
             </tr>
             <tr>
               <td>Routing Latency</td>
               <td>0.00 ms</td>
-              <td>11.90 ms</td>
+              <td>~11 ms</td>
               <td>Multi-signal tokenized scoring</td>
             </tr>
             <tr>
               <td>Compaction Latency</td>
               <td>0.00 ms</td>
-              <td>87.47 ms</td>
+              <td>~87 ms</td>
               <td>Non-destructive array capping & field pruning</td>
             </tr>
             <tr>
               <td>Total Middleware Overhead</td>
               <td>0.00 ms</td>
-              <td style="color: var(--accent-blue); font-weight: 600;">99.37 ms</td>
+              <td style="color: var(--accent-blue); font-weight: 600;">~98 ms</td>
               <td><span class="badge-diff-good">Sub-100ms end-to-end</span></td>
             </tr>
           </tbody>
@@ -862,27 +747,8 @@
           <button class="btn-copy" onclick="copyTelemetry()">Copy JSON</button>
         </div>
 
-        <div class="json-viewer" id="telemetry-json">{
-  "runId": "run-swift-92004",
-  "timestamp": "2026-09-07T16:44:05Z",
-  "userQuery": "Find open Swift concurrency issues related to our project and tell me which ones are probably relevant.",
-  "discoveredTools": 37,
-  "selectedTools": [
-    "github_search_issues",
-    "github_add_labels_to_issue",
-    "github_create_issue",
-    "github_create_issue_comment"
-  ],
-  "contextCapacity": 4096,
-  "rawResultTokens": 21850,
-  "reducedResultTokens": 1600,
-  "overflow": false,
-  "routingLatencyMs": 11.90,
-  "reductionLatencyMs": 87.47,
-  "totalLatencyMs": 99.37,
-  "targetIssuePreserved": 92004,
-  "taskSuccess": true
-}</div>
+        <div class="json-viewer" id="telemetry-json">Waiting for telemetry...
+Run the demo (swift run MCPContextEngineDemo) to stream execution events to this console.</div>
       </div>
     </div>
 
@@ -922,6 +788,12 @@
         const data = await resp.json();
         if (!data || !data.runId) return;
 
+        // Reveal active telemetry container
+        const noticeEl = document.getElementById('no-telemetry-notice');
+        const activeContainer = document.getElementById('active-telemetry-content');
+        if (noticeEl) noticeEl.style.display = 'none';
+        if (activeContainer) activeContainer.style.display = 'block';
+
         // 1. Telemetry JSON viewer
         const jsonEl = document.getElementById('telemetry-json');
         if (jsonEl) {
@@ -937,29 +809,91 @@
         }
 
         // 3. Dynamic Gauges
-        const gaugeValues = document.querySelectorAll('.gauge-value');
-        if (gaugeValues.length >= 3) {
-          const headroom = Math.max(0, data.contextCapacity - data.reducedResultTokens - 1700);
-          gaugeValues[0].innerText = `${headroom.toLocaleString()} tokens`;
-          gaugeValues[1].innerText = `${data.selectedTools.length} / ${data.discoveredTools} tools`;
-          const raw = data.rawResultTokens || 1;
-          const reduced = data.reducedResultTokens || 0;
-          const ratio = Math.max(0, (1 - (reduced / raw)) * 100).toFixed(1);
-          gaugeValues[2].innerText = `${ratio}%`;
-        }
+        const raw = data.rawResultTokens || 1;
+        const reduced = data.reducedResultTokens || 0;
+        const capacity = data.contextCapacity || 4096;
+        const ratio = Math.max(0, (1 - (reduced / raw)) * 100).toFixed(1);
+        const usedTotal = reduced + 1700;
+        const headroom = Math.max(0, capacity - usedTotal);
 
-        // 4. Progress Bars
-        const progressBars = document.querySelectorAll('.progress-bar');
-        if (progressBars.length >= 3) {
-          const usedPct = Math.min(100, Math.round((data.reducedResultTokens / (data.contextCapacity || 4096)) * 100));
-          progressBars[0].style.width = `${usedPct}%`;
-          const toolPct = Math.round((data.selectedTools.length / (data.discoveredTools || 1)) * 100);
-          progressBars[1].style.width = `${toolPct}%`;
-          const redPct = Math.min(100, Math.round((1 - (data.reducedResultTokens / (data.rawResultTokens || 1))) * 100));
-          progressBars[2].style.width = `${redPct}%`;
+        const bVal = document.getElementById('gauge-budget-val');
+        if (bVal) bVal.innerHTML = `${usedTotal.toLocaleString()} <span style="font-size: 13px; color: var(--text-muted);">/ ${capacity.toLocaleString()} tokens</span>`;
+        const bStatus = document.getElementById('gauge-budget-status');
+        if (bStatus) {
+          bStatus.innerText = data.budgetCompliant ? 'Within Limit' : 'OVERFLOW';
+          bStatus.style.color = data.budgetCompliant ? 'var(--accent-green)' : 'var(--accent-red)';
+        }
+        const bHeadroom = document.getElementById('gauge-headroom');
+        if (bHeadroom) bHeadroom.innerText = `Headroom: ${headroom.toLocaleString()} tokens`;
+        const barBudget = document.getElementById('bar-budget');
+        if (barBudget) barBudget.style.width = `${Math.min(100, Math.round((usedTotal / capacity) * 100))}%`;
+
+        const tVal = document.getElementById('gauge-tools-val');
+        if (tVal) tVal.innerHTML = `${data.selectedTools.length} <span style="font-size: 13px; color: var(--text-muted);">/ ${data.discoveredTools} tools exposed</span>`;
+        const tPruned = document.getElementById('gauge-tool-pruned');
+        const prunedCount = Math.max(0, data.discoveredTools - data.selectedTools.length);
+        const prunedRatio = data.discoveredTools > 0 ? ((prunedCount / data.discoveredTools) * 100).toFixed(1) : '0';
+        if (tPruned) tPruned.innerText = `-${prunedRatio}% Pruned`;
+        const barTools = document.getElementById('bar-tools');
+        if (barTools) barTools.style.width = `${Math.min(100, Math.round((data.selectedTools.length / Math.max(1, data.discoveredTools)) * 100))}%`;
+        const filteredEl = document.getElementById('gauge-filtered');
+        if (filteredEl) filteredEl.innerText = `Noise Tools Filtered: ${prunedCount}`;
+
+        const rVal = document.getElementById('gauge-reduction-val');
+        if (rVal) rVal.innerHTML = `${reduced.toLocaleString()} <span style="font-size: 13px; color: var(--text-muted);">from ${raw.toLocaleString()} tokens</span>`;
+        const rRatio = document.getElementById('gauge-reduction-ratio');
+        if (rRatio) rRatio.innerText = `-${ratio}%`;
+        const barRed = document.getElementById('bar-reduction');
+        if (barRed) barRed.style.width = `${Math.min(100, Math.round((1 - (reduced / raw)) * 100))}%`;
+        const rLat = document.getElementById('gauge-reduction-latency');
+        if (rLat) rLat.innerText = `Duration: ${data.reductionLatencyMs ? data.reductionLatencyMs.toFixed(2) + ' ms' : '--'}`;
+        const tStatus = document.getElementById('gauge-target-status');
+        if (tStatus) tStatus.innerText = `Target Preserved: ${data.targetPreserved ? 'Yes ✓' : 'No'}`;
+
+        // 4. Pipeline Trace
+        const traceTitle = document.getElementById('trace-title');
+        if (traceTitle) traceTitle.innerText = `Live Execution Trace (${data.runId})`;
+        const traceOverhead = document.getElementById('trace-overhead');
+        if (traceOverhead) traceOverhead.innerText = `TOTAL OVERHEAD: ${(data.totalLatencyMs || 0).toFixed(2)} MS`;
+
+        const pipe = document.getElementById('pipeline-container');
+        if (pipe) {
+          pipe.innerHTML = `
+            <div class="trace-item">
+              <div class="trace-head">
+                <span class="trace-tag">[01] INCOMING_TASK</span>
+                <span>${new Date(data.timestamp).toLocaleTimeString()}</span>
+              </div>
+              <div class="trace-content">
+                Query: "${data.userQuery}"
+              </div>
+            </div>
+            <div class="trace-item">
+              <div class="trace-head">
+                <span class="trace-tag">[02] TOOL_ROUTING</span>
+                <span>${(data.routingLatencyMs || 0).toFixed(2)} ms</span>
+              </div>
+              <div class="trace-content">
+                Discovered ${data.discoveredTools} tools across registered MCP servers.<br>
+                Selected: <strong>${data.selectedTools.join(', ')}</strong> (${data.selectedTools.length} tools).
+              </div>
+            </div>
+            <div class="trace-item">
+              <div class="trace-head">
+                <span class="trace-tag">[03] RESULT_REDUCER</span>
+                <span>${(data.reductionLatencyMs || 0).toFixed(2)} ms</span>
+              </div>
+              <div class="trace-content">
+                Raw payload: <strong>${data.rawResultTokens.toLocaleString()}</strong> tokens &rarr; Reduced to <strong>${data.reducedResultTokens.toLocaleString()}</strong> tokens (-${ratio}%).<br>
+                Budget Compliant: <strong>${data.budgetCompliant ? '<span style="color: var(--accent-green);">YES</span>' : '<span style="color: var(--accent-red);">NO</span>'}</strong> |
+                Target Preserved: <strong>${data.targetPreserved ? '<span style="color: var(--accent-green);">YES</span>' : 'NO'}</strong> |
+                Middleware Success: <strong>${data.taskSuccess ? '<span style="color: var(--accent-green);">TRUE</span>' : 'FALSE'}</strong>
+              </div>
+            </div>
+          `;
         }
       } catch (err) {
-        // Fallback gracefully when running statically or offline
+        // Run statically or server offline
       }
     }
 

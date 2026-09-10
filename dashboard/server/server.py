@@ -21,6 +21,8 @@ os.makedirs(DATA_DIR, exist_ok=True)
 LATEST_FILE = os.path.join(DATA_DIR, "telemetry.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "telemetry_history.json")
 
+MAX_BODY_SIZE = 1_000_000
+
 # In-memory telemetry cache
 telemetry_history = []
 latest_telemetry = None
@@ -45,7 +47,7 @@ class TelemetryHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=FRONTEND_DIR, **kwargs)
 
     def end_headers(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'http://127.0.0.1:3000')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
@@ -90,6 +92,13 @@ class TelemetryHandler(http.server.SimpleHTTPRequestHandler):
         global latest_telemetry, telemetry_history
         if self.path == '/api/telemetry':
             content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > MAX_BODY_SIZE:
+                self.send_response(413)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(b'{"error": "Payload exceeds maximum allowed size (1MB)"}')
+                return
+
             if content_length > 0:
                 raw_body = self.rfile.read(content_length)
                 try:
@@ -126,9 +135,9 @@ class TelemetryHandler(http.server.SimpleHTTPRequestHandler):
 
 def main():
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), TelemetryHandler) as httpd:
-        print(f"[mcp-context-console] Serving console at http://localhost:{PORT}")
-        print(f"[mcp-context-console] Telemetry API ready at http://localhost:{PORT}/api/telemetry")
+    with socketserver.TCPServer(("127.0.0.1", PORT), TelemetryHandler) as httpd:
+        print(f"[mcp-context-console] Serving console at http://127.0.0.1:{PORT}")
+        print(f"[mcp-context-console] Telemetry API ready at http://127.0.0.1:{PORT}/api/telemetry")
         print(f"[mcp-context-console] Static frontend at: {FRONTEND_DIR}")
         try:
             httpd.serve_forever()

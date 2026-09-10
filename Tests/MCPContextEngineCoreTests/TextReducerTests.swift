@@ -3,12 +3,12 @@ import XCTest
 
 final class TextReducerTests: XCTestCase {
     var reducer: TextReducer!
-    var tokenProvider: MockTokenProvider!
+    var tokenProvider: CalibratedTokenProvider!
 
     override func setUp() {
         super.setUp()
         reducer = TextReducer()
-        tokenProvider = MockTokenProvider()
+        tokenProvider = CalibratedTokenProvider()
     }
 
     func testPassthroughSmallText() {

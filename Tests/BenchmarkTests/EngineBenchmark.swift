@@ -4,7 +4,7 @@ import MCPContextEngineCore
 final class EngineBenchmark: XCTestCase {
     func testEngineReducesToolsAndPreventsOverflow() {
         let tools = BenchmarkFixtures.load50ToolsCatalog()
-        let tokenProvider = MockTokenProvider()
+        let tokenProvider = CalibratedTokenProvider()
 
         let totalCapacity = 4096
         let reservedResponse = 700

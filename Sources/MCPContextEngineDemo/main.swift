@@ -10,8 +10,8 @@ print("\n====================================================")
 print("                MCP CONTEXT ENGINE DEMO             ")
 print("====================================================")
 
-// STEP 1: Multi-Server Discovery & Registration
-print("\n[STEP 1: DISCOVERY & REGISTRY]")
+// Discover and catalog available tools across registered MCP servers.
+print("\n--- Discovery & Tool Registration ---")
 let catalog = DemoScenario.createCatalog()
 let registry = MCPToolRegistry()
 
@@ -48,13 +48,13 @@ for (server, tools) in serverGroups.sorted(by: { $0.key < $1.key }) {
 }
 print("Total Discovered & Registered Tools: \(registeredTools.count)")
 
-// STEP 2: User Task Query
+// Define agent turn task.
 let task = "Find open Swift concurrency issues related to our project and tell me which ones are probably relevant."
-print("\n[STEP 2: USER TASK]")
+print("\n--- Task Evaluation ---")
 print("User Query: \"\(task)\"")
 
-// STEP 3: Deterministic Tool Routing
-print("\n[STEP 3: DETERMINISTIC TOOL ROUTING]")
+// Score and route tools against task.
+print("\n--- Tool Routing ---")
 let router = ToolRouter()
 let routingResult = router.route(tools: registeredTools, forTask: task, topK: 4)
 
@@ -68,9 +68,9 @@ for (index, scored) in routingResult.selectedScores.enumerated() {
 }
 print(String(format: "Routing overhead: %.2f ms", routingResult.routingDurationMs))
 
-// STEP 4: Context Budget Allocation
-print("\n[STEP 4: CONTEXT BUDGET CALCULATION]")
-let tokenProvider = MockTokenProvider()
+// Context budget headroom allocation.
+print("\n--- Context Budget Allocation ---")
+let tokenProvider = CalibratedTokenProvider()
 let budgetManager = ContextBudgetManager(
     totalCapacity: 4096,
     reservedResponseTokens: 700,
@@ -89,8 +89,8 @@ print("  - Selected 4 tool schemas:     \(budget.toolSchemaTokens) tokens")
 print("----------------------------------------------------")
 print("Available Headroom for Result:   \(budget.availableForResultTokens) tokens")
 
-// STEP 5: Official MCP Client Execution via MCPToolExecutor
-print("\n[STEP 5: MCP EXECUTION VIA MCPTOOLROUTER & EXECUTOR]")
+// Tool execution.
+print("\n--- Tool Execution ---")
 let executor = MCPToolExecutor(registry: registry)
 let approvedToolIds = Set(routingResult.selectedTools.map(\.id))
 let selectedTool = routingResult.selectedTools[0]
@@ -98,7 +98,7 @@ let selectedTool = routingResult.selectedTools[0]
 print("Executing selected tool: '\(selectedTool.name)' through MCPToolExecutor...")
 let rawMCPResult = try await executor.execute(
     descriptor: selectedTool,
-    arguments: ["query": "is:issue is:open label:concurrency", "labels": "concurrency"],
+    arguments: ["query": "is:issue is:open label:concurrency", "state": "open", "labels": "concurrency"],
     approvedTools: approvedToolIds
 )
 
@@ -111,8 +111,8 @@ if rawMCPResult.contains("92004") {
 let initialFit = budgetManager.evaluateResultFit(resultText: rawMCPResult)
 print("Budget Fit Pre-check: \(initialFit.fits ? "FITS" : "OVERFLOW DETECTED (Deficit: \(initialFit.deficit) tokens)")")
 
-// STEP 6: Deterministic Result Reduction with Strict Budget Guarantee
-print("\n[STEP 6: RESULT REDUCTION]")
+// Result reduction.
+print("\n--- Result Reduction ---")
 let reducer = ResultReducer(tokenProvider: tokenProvider)
 let reductionResult = reducer.reduce(rawContent: rawMCPResult, availableBudgetTokens: budget.availableForResultTokens)
 
@@ -126,19 +126,19 @@ print(String(format: "  - Reduction overhead:   %.2f ms", reductionResult.durati
 let finalFit = budgetManager.evaluateResultFit(resultText: reductionResult.reducedData)
 print("Budget Fit Post-check: \(finalFit.fits ? "FITS WITHIN BUDGET" : "OVERFLOW")")
 if reductionResult.reducedData.contains("92004") {
-    print("  ✓ Verification: Target Issue #92004 ('Inheriting isolation...') successfully preserved in reduced output!")
+    print("  ✓ Verification: Target issue #92004 preserved in reduced output")
 }
 
-// STEP 7: Apple Foundation Models Integration Layer
-print("\n[STEP 7: APPLE FOUNDATION MODELS INTEGRATION LAYER]")
+// Foundation Models bridge.
+print("\n--- Foundation Models Bridge ---")
 let adapter = FoundationModelsAdapter()
 let foundationTools = adapter.bridgeAll(descriptors: routingResult.selectedTools, executor: executor, approvedTools: approvedToolIds)
 print("✓ Successfully bridged \(foundationTools.count) routed tools into MCPExecutableToolBridge")
 let appleTools = adapter.appleTools(descriptors: routingResult.selectedTools, executor: executor, approvedTools: approvedToolIds)
 print("✓ Instantiated \(appleTools.count) Apple Foundation Models bridge tools with call(arguments:) contract")
 
-// STEP 8: Benchmark Comparison & Observability
-print("\n[STEP 8: BENCHMARK COMPARISON & OBSERVABILITY]")
+// Context accounting and metrics.
+print("\n--- Context Accounting & Metrics ---")
 let baselineSchemaTokens = registeredTools.reduce(0) { $0 + $1.estimatedSchemaTokens() }
 let baselineTotal = budget.systemPromptTokens + budget.historyTokens + baselineSchemaTokens + budget.reservedResponseTokens + rawTokens
 let engineTotal = budget.systemPromptTokens + budget.historyTokens + budget.toolSchemaTokens + budget.reservedResponseTokens + reductionResult.reducedTokens
@@ -170,7 +170,7 @@ let metrics = ContextMetrics(
 
 print(metrics.formattedReport())
 
-// STEP 9: Telemetry Streaming to Observability Console (HTTP POST with disk fallback)
+// Telemetry streaming to local console.
 let telemetryEvent = EngineTelemetryEvent(
     runId: "demo-run-\(Int(Date().timeIntervalSince1970))",
     timestamp: Date(),
@@ -190,7 +190,7 @@ let telemetryEvent = EngineTelemetryEvent(
 )
 
 if let telemetryJSON = telemetryEvent.toJSON() {
-    print("\n[TELEMETRY STREAMING]")
+    print("\n--- Telemetry ---")
     var postedToConsole = false
 
     if let url = URL(string: "http://localhost:3000/api/telemetry"),

@@ -3,12 +3,12 @@ import XCTest
 
 final class JSONReducerTests: XCTestCase {
     var reducer: JSONReducer!
-    var tokenProvider: MockTokenProvider!
+    var tokenProvider: CalibratedTokenProvider!
 
     override func setUp() {
         super.setUp()
         reducer = JSONReducer()
-        tokenProvider = MockTokenProvider()
+        tokenProvider = CalibratedTokenProvider()
     }
 
     func testPrunesNullAndEmptyFields() {
@@ -102,5 +102,42 @@ final class JSONReducerTests: XCTestCase {
         XCTAssertTrue(reduced.contains("Inheriting actor isolation"), "Prioritized key 'title' should be preserved")
         XCTAssertTrue(reduced.contains("state"), "Prioritized key 'state' should be preserved")
         XCTAssertTrue(strategies.contains("preserve_prioritized_keys") || strategies.contains("aggressive_compaction"))
+    }
+
+    func testPrioritizedArraySelectionPreservesOriginalOrder() {
+        let customOptions = JSONReducer.Options(
+            maxArrayItems: 2,
+            maxStringLength: 300,
+            prioritizedKeys: ["title", "id"]
+        )
+        let customReducer = JSONReducer(options: customOptions)
+
+        let items: [[String: Any]] = [
+            ["foo": "bar0", "desc_extra": "misc"],
+            ["id": 1, "title": "First Important Item", "notes": "priority item 1"],
+            ["foo": "bar2", "desc_extra": "misc"],
+            ["id": 3, "title": "Second Important Item", "notes": "priority item 2"]
+        ]
+        let container: [String: Any] = ["results": items]
+        let data = try! JSONSerialization.data(withJSONObject: container, options: [])
+        let rawJSON = String(data: data, encoding: .utf8)!
+
+        let (reduced, _) = customReducer.reduce(
+            jsonString: rawJSON,
+            targetTokens: 500,
+            tokenProvider: tokenProvider
+        )
+
+        guard let reducedData = reduced.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: reducedData) as? [String: Any],
+              let reducedArray = json["results"] as? [[String: Any]] else {
+            XCTFail("Failed to parse reduced JSON")
+            return
+        }
+
+        let contentItems = reducedArray.filter { $0["_meta_omitted_items"] == nil }
+        XCTAssertEqual(contentItems.count, 2)
+        XCTAssertEqual(contentItems[0]["id"] as? Int, 1, "First high-priority item must remain first in sequence")
+        XCTAssertEqual(contentItems[1]["id"] as? Int, 3, "Second high-priority item must remain second in sequence")
     }
 }

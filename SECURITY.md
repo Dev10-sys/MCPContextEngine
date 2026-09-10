@@ -4,7 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
+| 0.1.x   | :white_check_mark: |
 
 ## Security Architecture & Threat Model
 
@@ -28,7 +28,7 @@ MCPContextEngine operates as middleware between Model Context Protocol (MCP) ser
 
 If you discover a potential security vulnerability in MCPContextEngine, please report it responsibly:
 
-- Send details via email to the project maintainers.
+- Submit a private advisory via [GitHub Security Advisories](https://github.com/Dev10-sys/MCPContextEngine/security/advisories/new).
 - Please do not open public issues for undisclosed security flaws.
 - Include reproduction steps, environment details, and an example MCP payload if applicable.
-- We aim to acknowledge receipt within 48 hours and provide patches promptly.
+- Maintainers aim to acknowledge receipt within 48 hours and coordinate remediations responsibly.

@@ -25,6 +25,10 @@ public struct ToolRouter: Sendable {
         minScoreThreshold: Double = 0.05,
         maxSchemaTokens: Int? = nil
     ) -> ToolRoutingResult {
+        precondition(topK == nil || topK! >= 0, "topK must be non-negative")
+        precondition(minScoreThreshold >= 0.0 && minScoreThreshold <= 1.0, "minScoreThreshold must be between 0.0 and 1.0")
+        precondition(maxSchemaTokens == nil || maxSchemaTokens! >= 0, "maxSchemaTokens must be non-negative")
+
         let startTime = DispatchTime.now()
 
         let scoredTools: [ToolScore] = tools.map { tool in
@@ -50,7 +54,7 @@ public struct ToolRouter: Sendable {
             }
 
             let candidateTokens = candidate.tool.estimatedSchemaTokens()
-            if let maxTokens = maxSchemaTokens, (currentSchemaTokens + candidateTokens) > maxTokens, !selected.isEmpty {
+            if let maxTokens = maxSchemaTokens, (currentSchemaTokens + candidateTokens) > maxTokens {
                 continue
             }
 
@@ -78,16 +82,30 @@ public struct ToolRouter: Sendable {
     }
 }
 
-/// The outcome of routing a set of tools against a user task.
+/// The outcome of routing a catalog of MCP tools against a user task.
 public struct ToolRoutingResult: Sendable {
+    /// The routed tool descriptors, ordered by decreasing relevance score.
     public let selectedTools: [MCPToolDescriptor]
+
+    /// Detailed relevance scores and signal breakdowns for each selected tool.
     public let selectedScores: [ToolScore]
+
+    /// All evaluated tool scores, sorted by descending relevance.
     public let allScores: [ToolScore]
+
+    /// Tool descriptors that were not selected due to score thresholds, top-K limits, or token budget limits.
     public let unselectedTools: [MCPToolDescriptor]
+
+    /// The total count of discovered tools available in the catalog prior to routing.
     public let totalDiscoveredCount: Int
+
+    /// The cumulative estimated schema tokens consumed by the selected tools.
     public let selectedSchemaTokens: Int
+
+    /// The execution time of the routing process in milliseconds.
     public let routingDurationMs: Double
 
+    /// The fraction of discovered tools retained after routing (`selected / total`).
     public var selectionRatio: Double {
         guard totalDiscoveredCount > 0 else { return 0.0 }
         return Double(selectedTools.count) / Double(totalDiscoveredCount)

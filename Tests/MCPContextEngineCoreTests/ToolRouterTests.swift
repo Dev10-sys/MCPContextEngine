@@ -51,4 +51,36 @@ final class ToolRouterTests: XCTestCase {
         XCTAssertTrue(unselectedNames.contains("calendar_list_events"))
         XCTAssertTrue(unselectedNames.contains("slack_send_message"))
     }
+
+    func testMaxSchemaTokensRejectsOversizedFirstTool() {
+        let tool = MCPToolDescriptor(
+            name: "very_large_tool",
+            description: String(repeating: "Extremely long tool description consuming dozens of tokens. ", count: 20),
+            serverId: "server"
+        )
+        let result = router.route(
+            tools: [tool],
+            forTask: "large tool",
+            topK: 4,
+            maxSchemaTokens: 10
+        )
+        XCTAssertTrue(result.selectedTools.isEmpty, "Tool exceeding maxSchemaTokens must not be selected even if it is the first candidate")
+    }
+
+    func testMaxSchemaTokensSelectsFittingToolsOnly() {
+        let smallTool = MCPToolDescriptor(name: "small_tool", description: "Small.", serverId: "srv")
+        let giantTool = MCPToolDescriptor(
+            name: "giant_tool",
+            description: String(repeating: "Huge description ", count: 50),
+            serverId: "srv"
+        )
+        let result = router.route(
+            tools: [giantTool, smallTool],
+            forTask: "tool",
+            topK: 4,
+            maxSchemaTokens: 25
+        )
+        XCTAssertTrue(result.selectedTools.contains { $0.name == "small_tool" })
+        XCTAssertFalse(result.selectedTools.contains { $0.name == "giant_tool" })
+    }
 }

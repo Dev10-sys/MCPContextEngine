@@ -34,6 +34,12 @@ public struct ContextBudget: Hashable, Sendable, Codable {
         historyTokens: Int = 700,
         toolSchemaTokens: Int = 0
     ) {
+        precondition(totalCapacity >= 0, "totalCapacity must be non-negative")
+        precondition(reservedResponseTokens >= 0, "reservedResponseTokens must be non-negative")
+        precondition(systemPromptTokens >= 0, "systemPromptTokens must be non-negative")
+        precondition(historyTokens >= 0, "historyTokens must be non-negative")
+        precondition(toolSchemaTokens >= 0, "toolSchemaTokens must be non-negative")
+
         self.totalCapacity = totalCapacity
         self.reservedResponseTokens = reservedResponseTokens
         self.systemPromptTokens = systemPromptTokens
@@ -43,7 +49,8 @@ public struct ContextBudget: Hashable, Sendable, Codable {
 
     /// Creates an updated budget reflecting a newly selected set of tools.
     public func with(toolSchemaTokens: Int) -> ContextBudget {
-        ContextBudget(
+        precondition(toolSchemaTokens >= 0, "toolSchemaTokens must be non-negative")
+        return ContextBudget(
             totalCapacity: totalCapacity,
             reservedResponseTokens: reservedResponseTokens,
             systemPromptTokens: systemPromptTokens,

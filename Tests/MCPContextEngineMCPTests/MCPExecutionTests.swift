@@ -112,4 +112,93 @@ final class MCPExecutionTests: XCTestCase {
             }
         }
     }
+
+    func testExecutorThrowsOnMissingRequiredArgument() async throws {
+        let registry = MCPToolRegistry()
+        let schema = ToolInputSchema(
+            type: "object",
+            properties: ["query": ToolInputSchema.PropertyDescriptor(type: "string")],
+            required: ["query"]
+        )
+        let tool = MCPToolDescriptor(name: "search_tool", inputSchema: schema, serverId: "srv")
+        let client = MockMCPClient(serverId: "srv", tools: [tool], handlers: ["search_tool": { _ in "ok" }])
+
+        await registry.registerServer(client)
+        _ = try await registry.discoverAllTools()
+
+        let executor = MCPToolExecutor(registry: registry)
+        do {
+            _ = try await executor.execute(identifier: "srv:search_tool", arguments: [:])
+            XCTFail("Must throw when missing required argument")
+        } catch let error as ArgumentValidationError {
+            if case .missingRequired(let name) = error {
+                XCTAssertEqual(name, "query")
+            } else {
+                XCTFail("Expected .missingRequired, got \(error)")
+            }
+        }
+    }
+
+    func testExecutorThrowsOnInvalidType() async throws {
+        let registry = MCPToolRegistry()
+        let schema = ToolInputSchema(
+            type: "object",
+            properties: [
+                "count": ToolInputSchema.PropertyDescriptor(type: "integer"),
+                "tag": ToolInputSchema.PropertyDescriptor(type: "string")
+            ],
+            required: ["count"]
+        )
+        let tool = MCPToolDescriptor(name: "count_tool", inputSchema: schema, serverId: "srv")
+        let client = MockMCPClient(serverId: "srv", tools: [tool], handlers: ["count_tool": { _ in "ok" }])
+
+        await registry.registerServer(client)
+        _ = try await registry.discoverAllTools()
+
+        let executor = MCPToolExecutor(registry: registry)
+        do {
+            _ = try await executor.execute(identifier: "srv:count_tool", arguments: ["count": "not_an_int"])
+            XCTFail("Must throw when argument type is invalid")
+        } catch let error as ArgumentValidationError {
+            if case .invalidType(let name, let expected) = error {
+                XCTAssertEqual(name, "count")
+                XCTAssertEqual(expected, "integer")
+            } else {
+                XCTFail("Expected .invalidType, got \(error)")
+            }
+        }
+    }
+
+    func testExecutorThrowsOnInvalidEnum() async throws {
+        let registry = MCPToolRegistry()
+        let schema = ToolInputSchema(
+            type: "object",
+            properties: [
+                "format": ToolInputSchema.PropertyDescriptor(type: "string", enum: ["json", "csv", "text"])
+            ],
+            required: ["format"]
+        )
+        let tool = MCPToolDescriptor(name: "format_tool", inputSchema: schema, serverId: "srv")
+        let client = MockMCPClient(serverId: "srv", tools: [tool], handlers: ["format_tool": { _ in "ok" }])
+
+        await registry.registerServer(client)
+        _ = try await registry.discoverAllTools()
+
+        let executor = MCPToolExecutor(registry: registry)
+        do {
+            _ = try await executor.execute(identifier: "srv:format_tool", arguments: ["format": "xml"])
+            XCTFail("Must throw when enum value is not permitted")
+        } catch let error as ArgumentValidationError {
+            if case .invalidEnum(let name, let val) = error {
+                XCTAssertEqual(name, "format")
+                XCTAssertEqual(val, "xml")
+            } else {
+                XCTFail("Expected .invalidEnum, got \(error)")
+            }
+        }
+
+        // Permitted enum succeeds
+        let validResult = try await executor.execute(identifier: "srv:format_tool", arguments: ["format": "json"])
+        XCTAssertEqual(validResult, "ok")
+    }
 }

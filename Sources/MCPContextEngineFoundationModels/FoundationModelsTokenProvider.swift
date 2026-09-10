@@ -13,12 +13,12 @@ import MCPContextEngineCore
 /// introspection APIs (`contextSize` and `tokenCount(for:)`).
 ///
 /// Falls back gracefully to Apple-platform linguistic tokenization (`NLTokenizer`) scaled for technical text,
-/// or calibrated cross-platform BPE estimation (~4 chars/token).
+/// or calibrated cross-platform character-ratio estimation (~4 chars/token).
 public final class FoundationModelsTokenProvider: TokenProvider, @unchecked Sendable {
-    private let calibratedProvider: MockTokenProvider
+    private let calibratedProvider: CalibratedTokenProvider
 
     public init(averageCharsPerToken: Double = 4.0) {
-        self.calibratedProvider = MockTokenProvider(averageCharsPerToken: averageCharsPerToken)
+        self.calibratedProvider = CalibratedTokenProvider(averageCharsPerToken: averageCharsPerToken)
     }
 
     /// Synchronous token counting conforming to `TokenProvider` protocol.

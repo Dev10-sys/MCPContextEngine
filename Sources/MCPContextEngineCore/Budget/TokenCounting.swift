@@ -20,9 +20,9 @@ public extension TokenProvider {
     }
 }
 
-/// A deterministic, calibrated token provider for offline testing, benchmarks, and non-Apple platforms.
-/// Modeled after standard byte-pair tokenizers (~3.8 characters per token for natural language and JSON).
-public struct MockTokenProvider: TokenProvider, Sendable {
+/// A deterministic, calibrated character-ratio token estimator intended for tests, offline operation,
+/// and synchronous cross-platform budgeting. It is not a model-native tokenizer.
+public struct CalibratedTokenProvider: TokenProvider, Sendable {
     public let averageCharsPerToken: Double
 
     public init(averageCharsPerToken: Double = 4.0) {
@@ -35,3 +35,6 @@ public struct MockTokenProvider: TokenProvider, Sendable {
         return max(1, Int(ceil(characters / averageCharsPerToken)))
     }
 }
+
+@available(*, deprecated, renamed: "CalibratedTokenProvider")
+public typealias MockTokenProvider = CalibratedTokenProvider

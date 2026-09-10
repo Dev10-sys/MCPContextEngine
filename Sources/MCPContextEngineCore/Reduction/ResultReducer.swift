@@ -11,7 +11,7 @@ public struct ResultReducer: Sendable {
     public init(
         jsonReducer: JSONReducer = JSONReducer(),
         textReducer: TextReducer = TextReducer(),
-        tokenProvider: TokenProvider = MockTokenProvider()
+        tokenProvider: TokenProvider = CalibratedTokenProvider()
     ) {
         self.jsonReducer = jsonReducer
         self.textReducer = textReducer
@@ -20,9 +20,6 @@ public struct ResultReducer: Sendable {
 
     /// Reduces the incoming MCP result payload to fit within the specified available budget.
     ///
-    /// - Parameters:
-    ///   - rawContent: The unmodified tool result returned by an MCP server.
-    ///   - availableBudgetTokens: Maximum tokens allowed for this result in the model prompt.
     /// - Returns: A `ReductionResult` containing both raw and reduced content with token audit stats.
     public func reduce(rawContent: String, availableBudgetTokens: Int) -> ReductionResult {
         let startTime = DispatchTime.now()
@@ -40,10 +37,11 @@ public struct ResultReducer: Sendable {
             )
         }
 
+        let isJSON = isLikelyJSON(rawContent)
         let reducedContent: String
         let appliedStrategies: [String]
 
-        if isLikelyJSON(rawContent) {
+        if isJSON {
             let (reducedJSON, strategies) = jsonReducer.reduce(
                 jsonString: rawContent,
                 targetTokens: availableBudgetTokens,
@@ -65,10 +63,7 @@ public struct ResultReducer: Sendable {
         var finalStrategies = appliedStrategies
         var finalReducedTokens = tokenProvider.countTokens(text: finalReducedContent)
 
-        // STRICT INVARIANT ENFORCEMENT:
-        // If progressive structural reduction did not bring the payload below availableBudgetTokens
-        // (e.g. monolithic keys, tight budget headroom), apply deterministic hard-ceiling truncation
-        // to mathematically guarantee that reducedTokens <= availableBudgetTokens.
+        // Final safety pass guarantees provider-relative budget compliance.
         if finalReducedTokens > availableBudgetTokens && availableBudgetTokens > 0 {
             let (guaranteedContent, ceilingStrategy) = enforceStrictBudgetCeiling(
                 content: finalReducedContent,
@@ -151,12 +146,21 @@ public struct ResultReducer: Sendable {
         if tokenProvider.countTokens(text: result) <= maxBudgetTokens {
             return (result, "strict_budget_ceiling_enforced")
         } else {
-            // Absolute fallback: trim character by character from the end
-            var trimmed = result
-            while !trimmed.isEmpty && tokenProvider.countTokens(text: trimmed) > maxBudgetTokens {
-                trimmed.removeLast()
+            // Binary search clamp to guarantee budget compliance without O(N^2) character iteration
+            var low = 0
+            var high = result.count
+            var clamped = ""
+            while low <= high {
+                let mid = (low + high) / 2
+                let candidate = String(result.prefix(mid))
+                if tokenProvider.countTokens(text: candidate) <= maxBudgetTokens {
+                    clamped = candidate
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
             }
-            return (trimmed, "strict_char_clamp")
+            return (clamped, "strict_char_clamp")
         }
     }
 

@@ -35,13 +35,33 @@ public struct MCPToolDescriptor: Identifiable, Hashable, Sendable, Codable {
         self.tags = tags
     }
 
-    /// Approximate token count required to serialize this tool's definition into a model prompt.
-    public func estimatedSchemaTokens() -> Int {
-        var characters = name.count + (description?.count ?? 0)
-        for (paramName, prop) in inputSchema.properties {
-            characters += paramName.count + (prop.description?.count ?? 0) + prop.type.count
+    /// Returns a canonical structured representation of the tool descriptor used for token accounting.
+    public func serializedSchemaRepresentation() -> String {
+        var parts: [String] = []
+        parts.append("tool:\(name)")
+        if let desc = description {
+            parts.append("desc:\(desc)")
         }
-        return max(1, (characters + 3) / 4)
+        parts.append("server:\(serverId)")
+        if !tags.isEmpty {
+            parts.append("tags:\(tags.sorted().joined(separator: ","))")
+        }
+        if !inputSchema.required.isEmpty {
+            parts.append("required:\(inputSchema.required.sorted().joined(separator: ","))")
+        }
+        for (paramName, prop) in inputSchema.properties.sorted(by: { $0.key < $1.key }) {
+            var propRepr = "\(paramName):\(prop.type)"
+            if let d = prop.description { propRepr += ";desc:\(d)" }
+            if let enums = prop.enum { propRepr += ";enum:\(enums.joined(separator: "|"))" }
+            if let it = prop.itemsType { propRepr += ";items:\(it)" }
+            parts.append(propRepr)
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    /// Token count required to serialize this tool's definition into prompt context using the provided TokenProvider.
+    public func estimatedSchemaTokens(using tokenProvider: TokenProvider = CalibratedTokenProvider()) -> Int {
+        tokenProvider.countTokens(text: serializedSchemaRepresentation())
     }
 }
 

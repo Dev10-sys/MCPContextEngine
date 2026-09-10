@@ -11,3 +11,6 @@ xcuserdata/
 *~
 dashboard/server/data/telemetry_history.json
 dashboard/server/data/telemetry.json
+__pycache__/
+*.pyc
+

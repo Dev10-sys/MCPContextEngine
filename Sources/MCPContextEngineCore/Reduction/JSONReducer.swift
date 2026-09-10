@@ -1,6 +1,6 @@
 import Foundation
 
-/// High-performance deterministic JSON compactor that reduces payload footprint
+/// Deterministic JSON compactor that reduces payload footprint
 /// while preserving key entities, relationships, and required query information.
 public struct JSONReducer: Sendable {
     public struct Options: Sendable {
@@ -152,15 +152,25 @@ public struct JSONReducer: Sendable {
             if total > currentOptions.maxArrayItems {
                 if !strategies.contains("cap_array_length") { strategies.append("cap_array_length") }
 
-                // When capping arrays of dictionaries, prioritize entries containing key identification fields
+                // When capping arrays of dictionaries, select items with the most prioritized keys,
+                // then restore their original relative ordering to preserve chronological or ranked sequence.
                 let candidateSlice: [Any]
                 if let dictArray = array as? [[String: Any]] {
-                    let sorted = dictArray.sorted { a, b in
-                        let aCount = a.keys.filter { currentOptions.prioritizedKeys.contains($0.lowercased()) }.count
-                        let bCount = b.keys.filter { currentOptions.prioritizedKeys.contains($0.lowercased()) }.count
-                        return aCount > bCount
-                    }
-                    candidateSlice = Array(sorted.prefix(currentOptions.maxArrayItems))
+                    let indexed = dictArray.enumerated().map { (offset: $0.offset, element: $0.element) }
+                    let selectedIndices = indexed
+                        .sorted { a, b in
+                            let aCount = a.element.keys.filter { currentOptions.prioritizedKeys.contains($0.lowercased()) }.count
+                            let bCount = b.element.keys.filter { currentOptions.prioritizedKeys.contains($0.lowercased()) }.count
+                            if aCount != bCount {
+                                return aCount > bCount
+                            }
+                            return a.offset < b.offset
+                        }
+                        .prefix(currentOptions.maxArrayItems)
+                        .map(\.offset)
+                        .sorted()
+
+                    candidateSlice = selectedIndices.map { array[$0] }
                 } else {
                     candidateSlice = Array(array.prefix(currentOptions.maxArrayItems))
                 }

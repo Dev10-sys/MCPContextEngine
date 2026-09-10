@@ -45,6 +45,7 @@ final class ClientStateLock: @unchecked Sendable {
 public protocol MCPClientProtocol: Sendable {
     var serverId: String { get }
     func connect() async throws
+    func disconnect()
     func listTools() async throws -> [MCPToolDescriptor]
     func callTool(name: String, arguments: [String: Any]) async throws -> String
 }
@@ -54,7 +55,17 @@ public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
     public let serverId: String
     private var registeredTools: [MCPToolDescriptor]
     private var toolHandlers: [String: @Sendable ([String: Any]) async throws -> String]
+    private var isConnected = false
+    private var disconnectCount = 0
     private let stateLock = ClientStateLock()
+
+    public var isCurrentlyConnected: Bool {
+        stateLock.withLock { isConnected }
+    }
+
+    public var disconnectCallCount: Int {
+        stateLock.withLock { disconnectCount }
+    }
 
     public init(
         serverId: String,
@@ -66,7 +77,16 @@ public final class MockMCPClient: MCPClientProtocol, @unchecked Sendable {
         self.toolHandlers = handlers
     }
 
-    public func connect() async throws {}
+    public func connect() async throws {
+        stateLock.withLock { isConnected = true }
+    }
+
+    public func disconnect() {
+        stateLock.withLock {
+            isConnected = false
+            disconnectCount += 1
+        }
+    }
 
     public func listTools() async throws -> [MCPToolDescriptor] {
         stateLock.withLock { registeredTools }
@@ -108,6 +128,7 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     private var client: MCP.Client?
     private var process: Process?
     private var lifecycle: ConnectionLifecycle = .disconnected
+    private var connectionGeneration: Int = 0
     private let stateLock = ClientStateLock()
 
     public init(
@@ -123,19 +144,20 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     public func connect() async throws {
-        let shouldInitiate: Bool = stateLock.withLock {
+        let generation: Int = stateLock.withLock {
             switch lifecycle {
             case .connected:
-                return false
+                return -1
             case .connecting:
-                return false
+                return -1
             case .disconnected, .disconnecting:
+                connectionGeneration += 1
                 lifecycle = .connecting
-                return true
+                return connectionGeneration
             }
         }
 
-        if !shouldInitiate {
+        if generation < 0 {
             // Await active connection in flight without duplicate child process spawning
             for _ in 0..<100 {
                 let state = stateLock.withLock { lifecycle }
@@ -164,10 +186,10 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
 
         let inputPipe = Pipe()
         let outputPipe = Pipe()
-        let errorPipe = Pipe()
         proc.standardInput = inputPipe
         proc.standardOutput = outputPipe
-        proc.standardError = errorPipe
+        // Inherit standard error directly to avoid pipe buffer deadlocks on large child stderr emissions
+        proc.standardError = FileHandle.standardError
 
         do {
             try proc.run()
@@ -210,14 +232,26 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
             throw error
         }
 
-        stateLock.withLock {
+        let isValidCompletion = stateLock.withLock { () -> Bool in
+            guard self.connectionGeneration == generation && self.lifecycle == .connecting else {
+                return false
+            }
             self.client = mcpClient
             self.lifecycle = .connected
+            return true
+        }
+
+        if !isValidCompletion {
+            if proc.isRunning {
+                proc.terminate()
+            }
+            return
         }
     }
 
     public func disconnect() {
         let procToTerminate: Process? = stateLock.withLock {
+            self.connectionGeneration += 1
             self.lifecycle = .disconnecting
             let proc = self.process
             self.client = nil
@@ -308,7 +342,7 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
             throw MCPClientError.notConnected
         }
 
-        let mcpArgs = convertToMCPValues(arguments)
+        let mcpArgs = try convertToMCPValues(arguments)
         let (content, _) = try await client.callTool(name: name, arguments: mcpArgs)
 
         return content.compactMap { contentItem in
@@ -319,22 +353,25 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
         }.joined(separator: "\n")
     }
 
-    private func convertToMCPValues(_ dict: [String: Any]) -> [String: Value] {
+    private func convertToMCPValues(_ dict: [String: Any]) throws -> [String: Value] {
         var result: [String: Value] = [:]
         for (key, val) in dict {
-            result[key] = convertToMCPValue(val)
+            result[key] = try convertToMCPValue(val, key: key)
         }
         return result
     }
 
-    private func convertToMCPValue(_ val: Any) -> Value {
+    private func convertToMCPValue(_ val: Any, key: String) throws -> Value {
         if let str = val as? String { return .string(str) }
         if let int = val as? Int { return .int(int) }
         if let dbl = val as? Double { return .double(dbl) }
         if let bool = val as? Bool { return .bool(bool) }
-        if let dict = val as? [String: Any] { return .object(convertToMCPValues(dict)) }
-        if let arr = val as? [Any] { return .array(arr.map { convertToMCPValue($0) }) }
-        return .null
+        if let dict = val as? [String: Any] { return .object(try convertToMCPValues(dict)) }
+        if let arr = val as? [Any] {
+            return .array(try arr.enumerated().map { try convertToMCPValue($0.element, key: "\(key)[\($0.offset)]") })
+        }
+        if val is NSNull { return .null }
+        throw MCPArgumentConversionError.unsupportedType(key: key, typeName: String(describing: type(of: val)))
     }
 
     deinit {
@@ -343,9 +380,28 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
 }
 #endif
 
+/// Error raised when an argument type cannot be converted into an MCP JSON value.
+public enum MCPArgumentConversionError: Error, LocalizedError {
+    /// The specified argument cannot be mapped to a valid MCP JSON primitive or collection.
+    case unsupportedType(key: String, typeName: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedType(let key, let typeName):
+            return "Cannot convert argument '\(key)' of unsupported type '\(typeName)' to an MCP JSON value."
+        }
+    }
+}
+
+/// Errors occurring during MCP client connection and tool invocation.
 public enum MCPClientError: Error, LocalizedError {
+    /// The client is not currently connected to the underlying MCP server.
     case notConnected
+
+    /// Tool invocation failed at the server level.
     case executionFailed(String)
+
+    /// The requested tool was not found on the server.
     case toolNotFound(String)
 
     public var errorDescription: String? {

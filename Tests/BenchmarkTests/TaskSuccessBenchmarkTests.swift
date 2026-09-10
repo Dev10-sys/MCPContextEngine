@@ -91,7 +91,7 @@ final class TaskSuccessBenchmarkTests: XCTestCase {
 
     func testBenchmarkScenariosComparison() async throws {
         let catalog = BenchmarkFixtures.load50ToolsCatalog()
-        let tokenProvider = MockTokenProvider()
+        let tokenProvider = CalibratedTokenProvider()
         let scenarios = createScenarios()
 
         let totalCapacity = 4096

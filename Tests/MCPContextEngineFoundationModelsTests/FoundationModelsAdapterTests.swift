@@ -66,7 +66,7 @@ final class FoundationModelsAdapterTests: XCTestCase {
         XCTAssertTrue(raw.contains("Large diagnostic trace chunk"))
 
         // Execution with automatic budget reduction
-        let reducer = ResultReducer(tokenProvider: MockTokenProvider())
+        let reducer = ResultReducer(tokenProvider: CalibratedTokenProvider())
         let reductionResult = try await bridgedTool.executeAndReduce(
             arguments: [:],
             availableBudgetTokens: 100,

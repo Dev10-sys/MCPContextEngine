@@ -3,7 +3,7 @@ import XCTest
 
 final class TokenCountingTests: XCTestCase {
     func testMockTokenProviderCalculation() {
-        let provider = MockTokenProvider(averageCharsPerToken: 4.0)
+        let provider = CalibratedTokenProvider(averageCharsPerToken: 4.0)
 
         XCTAssertEqual(provider.countTokens(text: ""), 0)
         XCTAssertEqual(provider.countTokens(text: "1234"), 1)
@@ -25,5 +25,45 @@ final class TokenCountingTests: XCTestCase {
         let tokens = tool.estimatedSchemaTokens()
         XCTAssertGreaterThan(tokens, 0)
         XCTAssertLessThan(tokens, 100)
+    }
+
+    func testEstimatedSchemaTokensReflectsInputSchemaChanges() {
+        let provider = CalibratedTokenProvider(averageCharsPerToken: 4.0)
+        let baseTool = MCPToolDescriptor(
+            name: "tool",
+            description: "A tool.",
+            inputSchema: ToolInputSchema(
+                type: "object",
+                properties: ["param": .init(type: "string")]
+            ),
+            serverId: "srv"
+        )
+        let baseTokens = baseTool.estimatedSchemaTokens(using: provider)
+
+        let toolWithRequired = MCPToolDescriptor(
+            name: "tool",
+            description: "A tool.",
+            inputSchema: ToolInputSchema(
+                type: "object",
+                properties: ["param": .init(type: "string")],
+                required: ["param"]
+            ),
+            serverId: "srv"
+        )
+        let requiredTokens = toolWithRequired.estimatedSchemaTokens(using: provider)
+        XCTAssertGreaterThan(requiredTokens, baseTokens, "Adding required fields must increase estimated tokens")
+
+        let toolWithEnum = MCPToolDescriptor(
+            name: "tool",
+            description: "A tool.",
+            inputSchema: ToolInputSchema(
+                type: "object",
+                properties: ["param": .init(type: "string", enum: ["option_a", "option_b", "option_c"])],
+                required: ["param"]
+            ),
+            serverId: "srv"
+        )
+        let enumTokens = toolWithEnum.estimatedSchemaTokens(using: provider)
+        XCTAssertGreaterThan(enumTokens, requiredTokens, "Adding enum definitions must increase estimated tokens")
     }
 }

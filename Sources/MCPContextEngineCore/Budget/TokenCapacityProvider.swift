@@ -1,10 +1,9 @@
 import Foundation
 
-/// Protocol for resolving dynamic runtime model context capacity.
+/// Protocol for resolving model context capacity limits.
 ///
-/// On macOS/Darwin with FoundationModels, this inspects the runtime
-/// LanguageModel session (e.g. 4K on-device, 32K for PCC).
-/// On Linux/Windows, this uses calibrated defaults.
+/// Implementations abstract context window limits across local, on-device, and cloud runtimes.
+/// Platform-specific adapters (such as `FoundationModelsTokenProvider`) query active runtime sessions.
 public protocol TokenCapacityProvider: Sendable {
     /// Context window token limit for the active model runtime.
     var defaultCapacity: Int { get }

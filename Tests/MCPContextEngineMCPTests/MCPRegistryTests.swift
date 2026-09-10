@@ -80,4 +80,72 @@ final class MCPRegistryTests: XCTestCase {
         let tempToolAfter = await registry.tool(byId: "temp:temp_tool")
         XCTAssertNil(tempToolAfter)
     }
+
+    func testReplacingServerDisconnectsPreviousClient() async throws {
+        let registry = MCPToolRegistry()
+        let clientV1 = MockMCPClient(serverId: "srv", tools: [MCPToolDescriptor(name: "tool_v1", serverId: "srv")])
+        try await clientV1.connect()
+        XCTAssertTrue(clientV1.isCurrentlyConnected)
+
+        await registry.registerServer(clientV1)
+        XCTAssertEqual(clientV1.disconnectCallCount, 0)
+
+        // Register new client with same serverId
+        let clientV2 = MockMCPClient(serverId: "srv", tools: [MCPToolDescriptor(name: "tool_v2", serverId: "srv")])
+        await registry.registerServer(clientV2)
+
+        XCTAssertFalse(clientV1.isCurrentlyConnected, "Previous client must be disconnected on replacement")
+        XCTAssertEqual(clientV1.disconnectCallCount, 1)
+    }
+
+    func testUnregisteringServerDisconnectsClient() async throws {
+        let registry = MCPToolRegistry()
+        let client = MockMCPClient(serverId: "srv", tools: [MCPToolDescriptor(name: "tool_1", serverId: "srv")])
+        try await client.connect()
+        XCTAssertTrue(client.isCurrentlyConnected)
+
+        await registry.registerServer(client)
+        await registry.unregisterServer(serverId: "srv")
+
+        XCTAssertFalse(client.isCurrentlyConnected, "Client must be disconnected when server is unregistered")
+        XCTAssertEqual(client.disconnectCallCount, 1)
+    }
+
+    func testDeterministicDiscoveryOrdering() async throws {
+        let registry = MCPToolRegistry()
+        let clientA = MockMCPClient(serverId: "z_srv", tools: [MCPToolDescriptor(name: "tool_z", serverId: "z_srv")])
+        let clientB = MockMCPClient(serverId: "a_srv", tools: [MCPToolDescriptor(name: "tool_a", serverId: "a_srv")])
+        let clientC = MockMCPClient(serverId: "m_srv", tools: [MCPToolDescriptor(name: "tool_m", serverId: "m_srv")])
+
+        await registry.registerServer(clientA)
+        await registry.registerServer(clientB)
+        await registry.registerServer(clientC)
+
+        let discovered = try await registry.discoverAllTools()
+        let discoveredIds = discovered.map(\.id)
+        let sortedIds = discoveredIds.sorted()
+        XCTAssertEqual(discoveredIds, sortedIds, "discoverAllTools must return descriptors in deterministic sorted order")
+    }
+
+    func testUniqueToolNamedThrowsOnAmbiguity() async throws {
+        let registry = MCPToolRegistry()
+        let client1 = MockMCPClient(serverId: "srv1", tools: [MCPToolDescriptor(name: "shared_tool", serverId: "srv1")])
+        let client2 = MockMCPClient(serverId: "srv2", tools: [MCPToolDescriptor(name: "shared_tool", serverId: "srv2")])
+
+        await registry.registerServer(client1)
+        await registry.registerServer(client2)
+        _ = try await registry.discoverAllTools()
+
+        // tool(named:) returns nil on ambiguity
+        let ambiguousTool = await registry.tool(named: "shared_tool")
+        XCTAssertNil(ambiguousTool, "tool(named:) should return nil when multiple servers provide the same tool name")
+
+        // uniqueTool(named:) throws
+        do {
+            _ = try await registry.uniqueTool(named: "shared_tool")
+            XCTFail("uniqueTool(named:) must throw when multiple servers expose the same tool name")
+        } catch {
+            // Expected
+        }
+    }
 }

@@ -46,28 +46,74 @@ public struct MCPToolExecutor: Sendable {
 
         // 1. Resolve by fully-qualified tool ID ("serverId:name")
         if identifier.contains(":") {
-            guard let client = await registry.client(forToolId: identifier) else {
-                throw MCPClientError.toolNotFound("No registered server provides tool with ID '\(identifier)'.")
-            }
             guard let descriptor = await registry.tool(byId: identifier) else {
                 throw MCPClientError.toolNotFound("Tool metadata not found for ID '\(identifier)'.")
             }
+            guard let client = await registry.client(forToolId: identifier) else {
+                throw MCPClientError.toolNotFound("No registered server provides tool with ID '\(identifier)'.")
+            }
+            try validateArguments(arguments, against: descriptor.inputSchema)
             return try await client.callTool(name: descriptor.name, arguments: arguments)
         }
 
         // 2. Resolve by bare name
-        if await registry.isAmbiguous(toolName: identifier) {
-            let candidates = await registry.tools(named: identifier).map { $0.id }
-            throw ExecutionSecurityError.ambiguousTool(
-                "Execution of tool '\(identifier)' is ambiguous across multiple registered servers: \(candidates.joined(separator: ", ")). Please specify fully-qualified identifier ('serverId:name')."
-            )
-        }
-
-        guard let client = await registry.client(forToolName: identifier) else {
+        let descriptor = try await registry.uniqueTool(named: identifier)
+        guard let client = await registry.client(forToolId: descriptor.id) else {
             throw MCPClientError.toolNotFound("No registered server provides tool '\(identifier)'.")
         }
+        try validateArguments(arguments, against: descriptor.inputSchema)
+        return try await client.callTool(name: descriptor.name, arguments: arguments)
+    }
 
-        return try await client.callTool(name: identifier, arguments: arguments)
+    /// Validates invocation arguments against the tool's defined input schema.
+    private func validateArguments(_ arguments: [String: Any], against schema: ToolInputSchema) throws {
+        // 1. Validate required fields
+        for req in schema.required {
+            if arguments[req] == nil {
+                throw ArgumentValidationError.missingRequired(req)
+            }
+        }
+
+        // 2. Validate known property types and enum constraints
+        for (key, val) in arguments {
+            guard let prop = schema.properties[key] else {
+                continue
+            }
+
+            switch prop.type.lowercased() {
+            case "string":
+                guard let strVal = val as? String else {
+                    throw ArgumentValidationError.invalidType(name: key, expected: "string")
+                }
+                if let allowedEnums = prop.enum, !allowedEnums.isEmpty {
+                    if !allowedEnums.contains(strVal) {
+                        throw ArgumentValidationError.invalidEnum(name: key, value: strVal)
+                    }
+                }
+            case "integer", "int":
+                guard val is Int else {
+                    throw ArgumentValidationError.invalidType(name: key, expected: "integer")
+                }
+            case "number", "double", "float":
+                guard val is Double || val is Int || val is Float else {
+                    throw ArgumentValidationError.invalidType(name: key, expected: "number")
+                }
+            case "boolean", "bool":
+                guard val is Bool else {
+                    throw ArgumentValidationError.invalidType(name: key, expected: "boolean")
+                }
+            case "array":
+                guard val is [Any] else {
+                    throw ArgumentValidationError.invalidType(name: key, expected: "array")
+                }
+            case "object":
+                guard val is [String: Any] else {
+                    throw ArgumentValidationError.invalidType(name: key, expected: "object")
+                }
+            default:
+                break
+            }
+        }
     }
 
     /// Convenience overload executing directly from an MCPToolDescriptor.
@@ -89,6 +135,35 @@ public struct MCPToolExecutor: Sendable {
     }
 }
 
+/// Errors raised during tool argument validation against the tool's schema descriptor.
+public enum ArgumentValidationError: Error, LocalizedError {
+    /// A required argument field is missing from the invocation parameters.
+    case missingRequired(String)
+
+    /// An argument has an incompatible runtime type.
+    case invalidType(name: String, expected: String)
+
+    /// A string argument does not match any of the permitted enum values.
+    case invalidEnum(name: String, value: String)
+
+    /// An unknown argument was provided.
+    case unknownArgument(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingRequired(let name):
+            return "Missing required argument: '\(name)'."
+        case .invalidType(let name, let expected):
+            return "Invalid type for argument '\(name)'; expected \(expected)."
+        case .invalidEnum(let name, let value):
+            return "Invalid value '\(value)' for argument '\(name)'; does not match allowed enum choices."
+        case .unknownArgument(let name):
+            return "Unknown argument '\(name)' provided."
+        }
+    }
+}
+
+/// Errors occurring during tool identity resolution or authorization enforcement.
 public enum ExecutionSecurityError: Error, LocalizedError {
     case unauthorizedTool(String)
     case ambiguousTool(String)

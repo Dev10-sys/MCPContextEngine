@@ -19,7 +19,7 @@ public actor MCPContextEngine {
         reservedResponseTokens: Int = 700,
         systemPromptTokens: Int = 300,
         historyTokens: Int = 700,
-        tokenProvider: TokenProvider = MockTokenProvider(),
+        tokenProvider: TokenProvider = CalibratedTokenProvider(),
         router: ToolRouter = ToolRouter()
     ) {
         self.tokenProvider = tokenProvider
@@ -143,19 +143,46 @@ public actor MCPContextEngine {
 
 /// Consolidated outcome of an MCPContextEngine execution run.
 public struct EngineExecutionResult: Sendable {
+    /// The original task query submitted to the engine.
     public let task: String
+
+    /// The tools selected by the router, ordered by relevance.
     public let selectedTools: [MCPToolDescriptor]
+
+    /// The context budget snapshot used during the turn.
     public let budget: ContextBudget
+
+    /// The uncompressed raw result string returned by the tool executor.
     public let rawResult: String
+
+    /// The token count of the raw result according to the configured TokenProvider.
     public let rawTokens: Int
+
+    /// The compacted result string guaranteed to fit the available result tokens.
     public let reducedResult: String
+
+    /// The token count of the reduced result.
     public let reducedTokens: Int
+
+    /// The ratio of reduction achieved: `(rawTokens - reducedTokens) / rawTokens`.
     public let reductionRatio: Double
+
+    /// Indicates whether the reduced result fits within the available context headroom.
     public let fitsBudget: Bool
+
+    /// Alias for fitsBudget reflecting context-window compliance.
     public let contextFitSuccess: Bool
+
+    /// Indicates whether targeted keywords/information from the query were preserved in the reduction.
     public let targetPreserved: Bool
+
+    /// Middleware-level heuristic success: fits budget, tool executed, and target preserved.
     public let taskSuccess: Bool
+
+    /// Optional application/model-level evaluator result.
     public let modelTaskSuccess: Bool?
+
+    /// Structured telemetry record capturing all timing, token, and routing metrics for this turn.
     public let telemetry: EngineTelemetryEvent
 }
 
