@@ -234,7 +234,7 @@ For each scenario, the suite deterministically verifies:
 
 ### 2. Interactive Demonstration Pipeline (37 Tools across 6 Servers)
 
-The interactive CLI executable (`swift run MCPContextEngineDemo`) executes the complete turn pipeline against a 37-tool catalog across 6 servers using live GitHub issue search data:
+The interactive CLI executable (`swift run MCPContextEngineDemo`) executes the complete turn pipeline against a 37-tool catalog across 6 servers using live GitHub issue search data when available (with a deterministic synthetic fallback if offline):
 
 *Representative snapshot from `MCPContextEngineDemo` using `CalibratedTokenProvider`:*
 ```
@@ -248,7 +248,7 @@ Tools exposed:        37
 Schema tokens:        1,674 tokens
 Raw result tokens:    ~22,034 tokens
 Total context:        ~25,408 tokens
-Context overflow:     YES (Deficit: ~19,886 tokens)
+Context overflow:     YES (Deficit: ~21,312 tokens)
 Context-fit success:  0% (Exceeds 4,096-token window)
 ---------------- ENGINE (MCPContextEngine) ----------
 Tools selected:       4 (-89.2% pruned)
