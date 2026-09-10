@@ -146,6 +146,28 @@ final class FoundationModelsAdapterTests: XCTestCase {
         XCTAssertEqual(nested?["key"] as? Int, 10)
     }
 
+    func testDynamicArgumentValidationAndErrors() throws {
+        // Valid conversion
+        let validDict: [String: Any] = ["count": 50, "ratio": 1.25, "active": false]
+        let validated = try AppleMCPTool.Arguments(validatingDictionary: validDict)
+        XCTAssertEqual(validated.int(for: "count"), 50)
+        XCTAssertEqual(validated.double(for: "ratio"), 1.25)
+        XCTAssertEqual(validated.bool(for: "active"), false)
+
+        // Unsupported type throws DynamicArgumentConversionError
+        struct CustomOpaqueType {}
+        let invalidDict: [String: Any] = ["opaque": CustomOpaqueType()]
+        XCTAssertThrowsError(try AppleMCPTool.Arguments(validatingDictionary: invalidDict)) { error in
+            guard let convError = error as? DynamicArgumentConversionError else {
+                XCTFail("Expected DynamicArgumentConversionError, got: \(error)")
+                return
+            }
+            if case .unsupportedType(let desc) = convError {
+                XCTAssertTrue(desc.contains("CustomOpaqueType"))
+            }
+        }
+    }
+
     func testNativeTokenCountAndContextSizeFallback() async throws {
         let provider = FoundationModelsTokenProvider()
         let sampleText = "The quick brown fox jumps over the lazy dog. Swift 6 on Apple Silicon."

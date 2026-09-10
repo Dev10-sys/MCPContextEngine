@@ -67,11 +67,18 @@ public struct ToolInputSchema: Hashable, Sendable, Codable {
         public let type: String
         public let description: String?
         public let `enum`: [String]?
+        public let itemsType: String?
 
-        public init(type: String, description: String? = nil, enum: [String]? = nil) {
+        public init(
+            type: String,
+            description: String? = nil,
+            enum: [String]? = nil,
+            itemsType: String? = nil
+        ) {
             self.type = type
             self.description = description
             self.enum = `enum`
+            self.itemsType = itemsType
         }
     }
 }

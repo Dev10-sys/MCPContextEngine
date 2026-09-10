@@ -152,7 +152,7 @@ Sources/
 ## Security Model
 
 1. **Tool Execution Allowlist**: `MCPToolExecutor` enforces that only tools scored and selected by `ToolRouter` (or approved by the caller) can be dispatched. Unapproved tools are blocked before process execution with `ExecutionSecurityError.unauthorizedTool`.
-2. **Prompt Injection Containment**: MCP results are classified as `.tool` data payloads. `MCPResultConverter` neutralizes system instruction delimiter tokens (`<|im_start|>`, `<|system|>`, `[SYSTEM DIRECTIVE]`) preventing untrusted server outputs from hijacking model instructions.
+2. **Prompt Injection Containment**: MCP results are classified as `.tool` data payloads. `MCPResultConverter` neutralizes system instruction delimiter tokens (`<|im_start|>`, `<|system|>`, `[SYSTEM DIRECTIVE]`) to mitigate delimiter collision and control flow hijack attacks via tool outputs.
 3. **Cross-Server Collision Prevention & Disambiguation**: Tools are indexed by fully-qualified identifiers (`serverId:name`). `MCPToolRegistry` provides `tool(byId:)`, `tools(named:)`, and `isAmbiguous(toolName:)`. Attempting to invoke an ambiguous bare name throws `ExecutionSecurityError.ambiguousTool`, requiring callers to specify the exact fully-qualified identifier.
 4. **Immutability of Raw Data**: Reduction is non-destructive. `ReductionResult.originalData` retains the untouched raw server output for auditability, provenance, and incremental retrieval.
 
@@ -160,8 +160,8 @@ Sources/
 
 ## Apple Platform & Foundation Models Integration Layer
 
-- **Native Tool Conformance**: Under `#if canImport(FoundationModels)`, `AppleMCPTool` conforms directly to Apple's `FoundationModels.Tool` protocol with a typed dynamic `Arguments` container (`Codable`, `Sendable`), parameter dictionary conversion, and the framework's `call(arguments:)` contract for execution inside `LanguageModelSession`. Across all platforms, `MCPExecutableToolBridge` (`FoundationModelExecutableTool`) provides a unified executable contract with automated context reduction.
-- **Dynamic Schema Generation**: Bridges MCP tool schemas into Apple's `DynamicGenerationSchema` and `GenerationSchema` at runtime, enabling Apple Intelligence models to reason over dynamically discovered MCP tool signatures without hardcoded compile-time Swift schemas.
+- **Native Tool Conformance**: Under `#if canImport(FoundationModels)`, `AppleMCPTool` conforms directly to Apple's `FoundationModels.Tool` protocol with a typed dynamic `Arguments` container (`Codable`, `Sendable`), parameter dictionary conversion, and the framework's `call(arguments:)` contract. It provides availability-aware integration with `LanguageModelSession` (executing live on-device on Apple Intelligence-capable runtimes, and verifying protocol/schema conformance in CI). Across all platforms, `MCPExecutableToolBridge` (`FoundationModelExecutableTool`) provides a unified executable contract with automated context reduction.
+- **Dynamic Schema Generation**: Bridges MCP tool schemas into Apple's `DynamicGenerationSchema` and `GenerationSchema` at runtime, preserving exact primitive types (Int, Double, Bool), enum constraints, and array item types to enable Apple Intelligence models to reason over dynamically discovered MCP tool signatures without hardcoded compile-time Swift schemas.
 - **Native Token Counting & Context Introspection**: Exposes `nativeTokenCount(for:)` and `nativeContextSize()` that query `SystemLanguageModel.default.tokenCount(for:)` and `SystemLanguageModel.default.contextSize` when running on supported Apple Intelligence hardware runtimes.
 - **Linguistic & Calibrated Estimators**: When `FoundationModels` is unavailable (Linux, Windows, or earlier macOS), token counting gracefully falls back to an Apple-platform linguistic estimator (`NLTokenizer`) scaled for technical text, and a calibrated cross-platform BPE estimator (~4 chars/token).
 

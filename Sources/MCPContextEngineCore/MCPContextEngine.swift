@@ -3,9 +3,9 @@ import Foundation
 /// Explicit evaluator verifying whether the reduced payload preserves required target data.
 public typealias TargetEvaluator = @Sendable (_ raw: String, _ reduced: String) -> Bool
 
-/// The primary developer runtime interface for context-aware MCP orchestration.
+/// The primary developer runtime interface for context-aware MCP orchestration middleware for an agent turn.
 ///
-/// Integrates multi-server routing, dynamic headroom management, deterministic
+/// Integrates multi-server routing, provider-relative dynamic headroom management, deterministic
 /// compaction, and telemetry emission into a single call.
 public actor MCPContextEngine {
     public let router: ToolRouter
@@ -38,9 +38,9 @@ public actor MCPContextEngine {
     ///
     /// Pipeline:
     /// 1. Routes `availableTools` to top-K most relevant schemas.
-    /// 2. Calculates exact runtime token headroom.
+    /// 2. Calculates provider-relative runtime token headroom.
     /// 3. Calls `toolCaller` with the highest-ranked selected tool.
-    /// 4. Compacts the raw MCP payload with mathematical budget guarantees.
+    /// 4. Compacts the raw MCP payload with strict token budget guarantees relative to the configured TokenProvider.
     /// 5. Evaluates target preservation and context fit.
     /// 6. Emits structured telemetry.
     public func process(

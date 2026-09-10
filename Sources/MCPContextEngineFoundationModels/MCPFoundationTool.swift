@@ -12,6 +12,17 @@ public protocol MCPExecutableToolBridge: Sendable {
 /// Backward compatibility alias for earlier versions of the engine.
 public typealias FoundationModelExecutableTool = MCPExecutableToolBridge
 
+public enum DynamicArgumentConversionError: Error, LocalizedError, Equatable {
+    case unsupportedType(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedType(let desc):
+            return "Cannot convert unsupported type '\(desc)' to DynamicArgumentValue. Supported types are String, Int, Double, Bool, Array, Object, and NSNull."
+        }
+    }
+}
+
 /// Type-preserving dynamic argument value representation for tool arguments.
 /// Prevents lossy String coercion by faithfully decoding and encoding Int, Double,
 /// Bool, String, nested Arrays, and nested Objects.
@@ -36,16 +47,38 @@ public enum DynamicArgumentValue: Codable, Sendable, Equatable {
         }
     }
 
-    public init(anyValue: Any) {
+    public init(validatingAny anyValue: Any) throws {
         switch anyValue {
-        case let s as String: self = .string(s)
-        case let b as Bool: self = .bool(b)
-        case let i as Int: self = .int(i)
-        case let d as Double: self = .double(d)
-        case let f as Float: self = .double(Double(f))
-        case let a as [Any]: self = .array(a.map { DynamicArgumentValue(anyValue: $0) })
-        case let d as [String: Any]: self = .object(d.mapValues { DynamicArgumentValue(anyValue: $0) })
-        default: self = .string(String(describing: anyValue))
+        case is NSNull:
+            self = .null
+        case let s as String:
+            self = .string(s)
+        case let b as Bool:
+            self = .bool(b)
+        case let i as Int:
+            self = .int(i)
+        case let d as Double:
+            self = .double(d)
+        case let f as Float:
+            self = .double(Double(f))
+        case let a as [Any]:
+            self = .array(try a.map { try DynamicArgumentValue(validatingAny: $0) })
+        case let d as [String: Any]:
+            var obj: [String: DynamicArgumentValue] = [:]
+            for (k, v) in d {
+                obj[k] = try DynamicArgumentValue(validatingAny: v)
+            }
+            self = .object(obj)
+        default:
+            throw DynamicArgumentConversionError.unsupportedType(String(describing: type(of: anyValue)))
+        }
+    }
+
+    public init(anyValue: Any) {
+        if let validated = try? DynamicArgumentValue(validatingAny: anyValue) {
+            self = validated
+        } else {
+            self = .string(String(describing: anyValue))
         }
     }
 
@@ -113,6 +146,14 @@ public struct AppleMCPToolArguments: Codable, Sendable {
         var map: [String: DynamicArgumentValue] = [:]
         for (key, value) in dictionary {
             map[key] = DynamicArgumentValue(anyValue: value)
+        }
+        self.parameters = map
+    }
+
+    public init(validatingDictionary dictionary: [String: Any]) throws {
+        var map: [String: DynamicArgumentValue] = [:]
+        for (key, value) in dictionary {
+            map[key] = try DynamicArgumentValue(validatingAny: value)
         }
         self.parameters = map
     }
@@ -322,7 +363,19 @@ extension MCPToolDescriptor {
             case "boolean", "bool":
                 schemaType = DynamicGenerationSchema(type: Bool.self)
             case "array":
-                schemaType = DynamicGenerationSchema(arrayOf: DynamicGenerationSchema(type: String.self))
+                let itemType = propSchema.itemsType?.lowercased() ?? "string"
+                let elementSchema: DynamicGenerationSchema
+                switch itemType {
+                case "integer", "int":
+                    elementSchema = DynamicGenerationSchema(type: Int.self)
+                case "number":
+                    elementSchema = DynamicGenerationSchema(type: Double.self)
+                case "boolean", "bool":
+                    elementSchema = DynamicGenerationSchema(type: Bool.self)
+                default:
+                    elementSchema = DynamicGenerationSchema(type: String.self)
+                }
+                schemaType = DynamicGenerationSchema(arrayOf: elementSchema)
             case "object":
                 schemaType = DynamicGenerationSchema(name: propName, properties: [])
             default:

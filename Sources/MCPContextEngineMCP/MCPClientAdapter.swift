@@ -194,6 +194,7 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
     }
 
     /// Converts MCP SDK JSON schema value into the engine's lightweight ToolInputSchema.
+    /// Preserves property descriptions, enum constraints, and array element types.
     private func parseSchema(_ schemaValue: Value?) -> ToolInputSchema {
         guard case .object(let obj) = schemaValue else {
             return .empty
@@ -209,7 +210,27 @@ public final class StdioMCPClientAdapter: MCPClientProtocol, @unchecked Sendable
                 if case .string(let t) = propObj["type"] { type = t } else { type = "string" }
                 let description: String?
                 if case .string(let d) = propObj["description"] { description = d } else { description = nil }
-                properties[propName] = ToolInputSchema.PropertyDescriptor(type: type, description: description)
+
+                let enumValues: [String]?
+                if case .array(let enumArr) = propObj["enum"] {
+                    enumValues = enumArr.compactMap { if case .string(let s) = $0 { return s } else { return nil } }
+                } else {
+                    enumValues = nil
+                }
+
+                let itemsType: String?
+                if case .object(let itemsObj) = propObj["items"], case .string(let it) = itemsObj["type"] {
+                    itemsType = it
+                } else {
+                    itemsType = nil
+                }
+
+                properties[propName] = ToolInputSchema.PropertyDescriptor(
+                    type: type,
+                    description: description,
+                    enum: enumValues,
+                    itemsType: itemsType
+                )
             }
         }
 
